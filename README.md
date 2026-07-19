@@ -48,6 +48,33 @@ Before installing:
 
 AREDN already includes `iperf3` in its standard firmware image, so the PollyWAN AREDN node-to-node test does not require a separate iperf package on a normal AREDN installation.
 
+### Install through the AREDN web interface
+
+This is the simplest installation method when the APK has already been downloaded to your computer:
+
+1. Download `aredn-multiwan-0.1.0-r26.apk` from the GitHub release page.
+2. Log in to the AREDN node as an administrator.
+3. Open **Packages**.
+4. Under **Upload Package**, select the PollyWAN APK from your computer.
+5. Select **Fetch and Install**.
+6. Wait for the **Package installed** confirmation before closing the dialog.
+
+The AREDN upload workflow installs the selected file with `apk --allow-untrusted add`. When the node has access to its configured AREDN package repositories, `apk` can download missing declared dependencies automatically. When the node is offline and a dependency is missing, install the matching dependency APKs first or use the offline SSH bundle method below.
+
+After installation, refresh the browser and open:
+
+```text
+http://NODE/a/multiwan
+```
+
+AREDN caches UI templates. If the PollyWAN page does not appear immediately, restart only the web interface from SSH:
+
+```sh
+/etc/init.d/uhttpd restart
+```
+
+Do not reload networking or apply Ethernet port roles merely to finish the package upload.
+
 ### Download on a computer and copy to the node
 
 For release `v0.1.0-r26`:
@@ -126,7 +153,7 @@ swconfig
 
 Most of these are already present in a normal AREDN image. `apk` does not reinstall packages that already satisfy the dependency.
 
-### Install
+### Install from SSH
 
 ```sh
 apk add --allow-untrusted \
@@ -204,6 +231,8 @@ apk add --upgrade --allow-untrusted \
 
 /etc/init.d/uhttpd restart
 ```
+
+The AREDN **Packages** dialog can also upgrade PollyWAN: use **Upload Package**, choose the newer APK, and select **Fetch and Install**.
 
 An ordinary package upgrade should preserve the existing UCI configuration and confirmed Ethernet-role state. Do not reapply port roles unless the UI reports that a new role transaction is required.
 
