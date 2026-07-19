@@ -34,75 +34,39 @@ The current package release is `0.1.0-r26`.
 
 Wi-Fi WAN and Ethernet WAN 1 are mutually exclusive because AREDN gives both the same logical interface name, `wan`. PollyWAN never changes a radio mode; it observes AREDN's existing configuration and prevents an Ethernet WAN-1 assignment while Wi-Fi owns `wan`.
 
-## Install APK From a GitHub Release
+## Install From a GitHub Release
 
-PollyWAN is distributed as an APK attached to each GitHub release. Use an APK built for the AREDN/OpenWrt release and target installed on the node. Do not install generic Alpine packages or kernel packages from a different AREDN firmware build.
-
-Before installing:
-
-- confirm the node is a supported MikroTik hAP model
-- keep a known-good LAN or mesh management path available
-- confirm the node uses the APK package manager
-- confirm there is adequate overlay space with `df -h /overlay`
-- download the APK from the matching GitHub release
-
-AREDN already includes `iperf3` in its standard firmware image, so the PollyWAN AREDN node-to-node test does not require a separate iperf package on a normal AREDN installation.
-
-### Install through the AREDN web interface
-
-This is the simplest installation method when the APK has already been downloaded to your computer:
-
-1. Download `aredn-multiwan-0.1.0-r26.apk` from the GitHub release page.
-2. Log in to the AREDN node as an administrator.
-3. Open **Packages**.
-4. Under **Upload Package**, select the PollyWAN APK from your computer.
-5. Select **Fetch and Install**.
-6. Wait for the **Package installed** confirmation before closing the dialog.
-
-The AREDN upload workflow installs the selected file with `apk --allow-untrusted add`. When the node has access to its configured AREDN package repositories, `apk` can download missing declared dependencies automatically. When the node is offline and a dependency is missing, install the matching dependency APKs first or use the offline SSH bundle method below.
-
-After installation, refresh the browser and open:
-
-```text
-http://NODE/a/multiwan
-```
-
-AREDN caches UI templates. If the PollyWAN page does not appear immediately, restart only the web interface from SSH:
-
-```sh
-/etc/init.d/uhttpd restart
-```
-
-Do not reload networking or apply Ethernet port roles merely to finish the package upload.
-
-### Download on a computer and copy to the node
-
-For release `v0.1.0-r26`:
-
-```sh
-VERSION='0.1.0-r26'
-TAG="v${VERSION}"
-APK="aredn-multiwan-${VERSION}.apk"
-
-curl -fL --retry 3 \
-  -o "$APK" \
-  "https://github.com/mathisono/AREDN_PollyWAN/releases/download/${TAG}/${APK}"
-
-sha256sum "$APK"
-scp "$APK" root@NODE:/tmp/
-```
-
-Replace `NODE` with the AREDN node hostname or IP address. The APK can also be downloaded through a browser from:
+Download the APK for the matching PollyWAN release from:
 
 ```text
 https://github.com/mathisono/AREDN_PollyWAN/releases
 ```
 
-Compare the downloaded file's SHA-256 value with the checksum published for that release when one is provided.
+Use a package built for the AREDN/OpenWrt version and target installed on the node. Keep a working LAN or mesh management path available during installation and setup.
 
-### Download directly on the AREDN node
+### Recommended: install through the AREDN web interface
 
-When the node already has working Internet access and DNS:
+1. Download `aredn-multiwan-0.1.0-r26.apk` to your computer.
+2. Log in to the AREDN node as an administrator.
+3. Open **Packages**.
+4. Under **Upload Package**, choose the PollyWAN APK.
+5. Select **Fetch and Install**.
+6. Wait for **Package installed** before closing the dialog.
+7. Refresh the browser and open `http://NODE/a/multiwan`.
+
+The AREDN package screen installs the uploaded APK and uses the node's configured AREDN repositories to obtain any missing declared dependencies. Most dependencies are already present in the normal AREDN firmware. AREDN also includes `iperf3`, so no separate iperf package is normally required.
+
+Release r26 declares `ca-bundle`, `curl`, `ip-tiny`, `jshn`, `jsonfilter`, `nftables-json`, `redsocks`, and `kmod-nft-nat`. The hAP ac lite also requires `kmod-usb2` and `swconfig`.
+
+PollyWAN remains disabled after installation. Installing the APK alone does not reload networking or apply Ethernet port roles.
+
+If the PollyWAN page does not appear after refreshing, restart only the web interface from SSH:
+
+```sh
+/etc/init.d/uhttpd restart
+```
+
+### SSH installation alternative
 
 ```sh
 ssh root@NODE
@@ -117,124 +81,52 @@ curl -fL --retry 3 \
   "https://github.com/mathisono/AREDN_PollyWAN/releases/download/${TAG}/${APK}"
 
 sha256sum "$APK"
-```
-
-### Preview dependency resolution
-
-The APK contains PollyWAN itself, not copies of every dependency. `apk` will reuse installed packages and, when the node has reachable AREDN repositories, download any missing declared dependencies.
-
-Check the configured repositories and simulate the installation first:
-
-```sh
-cat /etc/apk/repositories
-apk add --simulate --allow-untrusted \
-  /tmp/aredn-multiwan-0.1.0-r26.apk
-```
-
-Release r26 declares these dependencies:
-
-```text
-ca-bundle
-curl
-ip-tiny
-jshn
-jsonfilter
-nftables-json
-redsocks
-kmod-nft-nat
-```
-
-The hAP ac lite target additionally requires:
-
-```text
-kmod-usb2
-swconfig
-```
-
-Most of these are already present in a normal AREDN image. `apk` does not reinstall packages that already satisfy the dependency.
-
-### Install from SSH
-
-```sh
-apk add --allow-untrusted \
-  /tmp/aredn-multiwan-0.1.0-r26.apk
-
+apk add --simulate --allow-untrusted "$APK"
+apk add --allow-untrusted "$APK"
 /etc/init.d/uhttpd restart
 ```
 
-The package post-install script enables and starts `wan3-manager`, but PollyWAN remains disabled and inert until enabled by an administrator. Restarting `uhttpd` reloads AREDN's cached UI templates; it does not reload networking or apply Ethernet port roles.
-
-Do not run `node-setup`, reload networking, or apply port roles merely to complete the package installation.
+Compare the SHA-256 value with the checksum published for the release when one is provided.
 
 ### Offline installation
 
-For a node without repository access, collect the PollyWAN APK and every dependency APK reported as missing by the simulation. All APKs must come from the same AREDN/OpenWrt release, target architecture, repository set, and kernel ABI as the node.
-
-Copy the complete bundle to `/tmp/pollywan-install/`, then install the dependency APKs and PollyWAN together:
+When the node cannot reach its AREDN package repositories, copy the PollyWAN APK and every missing dependency APK to the node. All files must come from the same AREDN/OpenWrt release, target architecture, repository set, and kernel ABI.
 
 ```sh
-mkdir -p /tmp/pollywan-install
-# Copy the matching APK files into this directory first.
-
-apk add --simulate --allow-untrusted \
-  /tmp/pollywan-install/*.apk
-
-apk add --allow-untrusted \
-  /tmp/pollywan-install/*.apk
-
+apk add --simulate --allow-untrusted /tmp/pollywan-install/*.apk
+apk add --allow-untrusted /tmp/pollywan-install/*.apk
 /etc/init.d/uhttpd restart
 ```
 
-Never include or force-install a replacement `kernel-*` package. Do not use `kmod-*` APKs built for a different AREDN firmware or kernel ABI.
+Never force-install a replacement `kernel-*` package or a `kmod-*` package built for another AREDN firmware release.
 
-### Verify the installation
+### Upgrade
+
+Use the same AREDN **Packages** → **Upload Package** process and select the newer APK. A normal upgrade preserves the PollyWAN UCI configuration and confirmed Ethernet-port roles. Refresh the browser afterward; restart `uhttpd` only when the updated page does not appear.
+
+### Verify
 
 ```sh
 apk info -e aredn-multiwan
-apk info -a aredn-multiwan
 command -v iperf3
 /usr/local/bin/wan-port-manager status
 /usr/local/bin/wan3-manager status
 /usr/local/bin/wan-sla status
 ```
 
-Expected iperf3 path on AREDN:
+The expected iperf3 path is `/usr/bin/iperf3`.
 
-```text
-/usr/bin/iperf3
-```
-
-After installation, open:
+The PollyWAN page is available at:
 
 ```text
 http://NODE/a/multiwan
 ```
 
-The page is also reachable from the package app entry:
+It is also reachable through:
 
 ```text
 http://NODE/cgi-bin/apps/aredn-multiwan/admin
 ```
-
-Installation should add the PollyWAN service and UI without changing the active network configuration. Review the page before enabling PollyWAN or assigning Ethernet roles.
-
-### Upgrade from an earlier PollyWAN APK
-
-Download the newer APK and preview the transaction before upgrading:
-
-```sh
-apk add --simulate --upgrade --allow-untrusted \
-  /tmp/aredn-multiwan-NEW-RELEASE.apk
-
-apk add --upgrade --allow-untrusted \
-  /tmp/aredn-multiwan-NEW-RELEASE.apk
-
-/etc/init.d/uhttpd restart
-```
-
-The AREDN **Packages** dialog can also upgrade PollyWAN: use **Upload Package**, choose the newer APK, and select **Fetch and Install**.
-
-An ordinary package upgrade should preserve the existing UCI configuration and confirmed Ethernet-role state. Do not reapply port roles unless the UI reports that a new role transaction is required.
 
 ## First-Time Setup
 
