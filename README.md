@@ -12,7 +12,7 @@ PollyWAN is disabled and inert immediately after installation. It does not remap
 - offers only two selection modes: Manual and Automatic
 - provides bounded speed tests using either AREDN node-to-node iperf3 or Cloudflare Internet-path testing
 - assigns hAP Ethernet roles with an explicit timed rollback and confirmation step
-- supports optional WAN 3 phone USB tethering and hAP-side PdaNet HTTP CONNECT settings
+- supports optional WAN 3 Android USB tethering through RNDIS, CDC Ethernet, or CDC NCM
 - hard-blocks tunnel ingress from local and remote Internet defaults
 
 PollyWAN is experimental and is not an official AREDN release.
@@ -23,13 +23,13 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current package release is `0.1.0-r26`.
+The current package release is `0.1.0-r27`.
 
 ## Local candidates
 
 - `wan` — WAN 1. When an AREDN radio is in client/WAN mode, the existing logical interface `wan` uses `wlan0` or `wlan1`. Otherwise WAN 1 uses administrator-selected hAP Ethernet port(s).
 - `wan2` — WAN 2 on administrator-selected Ethernet port(s).
-- `wan3` — WAN 3 fixed to a phone USB RNDIS/CDC tether when existing kernel USB-network support is available, with optional hAP-side PdaNet HTTP CONNECT settings.
+- `wan3` — Android USB tether using RNDIS, CDC Ethernet, or CDC NCM when existing kernel USB-network support is available.
 - Remote Mesh WAN remains the Babel-learned default in table 22 and is never treated as a fourth local candidate.
 
 Wi-Fi WAN and Ethernet WAN 1 are mutually exclusive because AREDN gives both the same logical interface name, `wan`. PollyWAN never changes a radio mode; it observes AREDN's existing configuration and prevents an Ethernet WAN-1 assignment while Wi-Fi owns `wan`.
@@ -46,7 +46,7 @@ Use a package built for the AREDN/OpenWrt version and target installed on the no
 
 ### Recommended: install through the AREDN web interface
 
-1. Download `aredn-multiwan-0.1.0-r26.apk` to your computer.
+1. Download `aredn-multiwan-0.1.0-r27.apk` to your computer.
 2. Log in to the AREDN node as an administrator.
 3. Open **Packages**.
 4. Under **Upload Package**, choose the PollyWAN APK.
@@ -56,7 +56,7 @@ Use a package built for the AREDN/OpenWrt version and target installed on the no
 
 The AREDN package screen installs the uploaded APK and uses the node's configured AREDN repositories to obtain any missing declared dependencies. Most dependencies are already present in the normal AREDN firmware. AREDN also includes `iperf3`, so no separate iperf package is normally required.
 
-Release r26 declares `ca-bundle`, `curl`, `ip-tiny`, `jshn`, `jsonfilter`, `nftables-json`, `redsocks`, and `kmod-nft-nat`. The hAP ac lite also requires `kmod-usb2` and `swconfig`.
+Release r27 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
 
 PollyWAN remains disabled after installation. Installing the APK alone does not reload networking or apply Ethernet port roles.
 
@@ -72,7 +72,7 @@ If the PollyWAN page does not appear after refreshing, restart only the web inte
 ssh root@NODE
 cd /tmp
 
-VERSION='0.1.0-r26'
+VERSION='0.1.0-r27'
 TAG="v${VERSION}"
 APK="aredn-multiwan-${VERSION}.apk"
 
@@ -131,13 +131,13 @@ http://NODE/cgi-bin/apps/aredn-multiwan/admin
 ## First-Time Setup
 
 1. Open the PollyWAN page in the AREDN web UI.
-2. Review the status cards for WAN 1, WAN 2, WAN 3 USB, remote Mesh WAN, route policy, Ethernet ports, and speed-test results.
+2. Review the status cards for WAN 1, WAN 2, Android USB tether, remote Mesh WAN, route policy, Ethernet ports, and speed-test results.
 3. Open **WAN policy** and choose **Manual** or **Automatic**.
 4. Choose the preferred connection.
 5. Enable only the WAN candidates you actually intend to use.
 6. If using Ethernet WAN roles, open **Ethernet ports**, assign port roles, then use **Apply with rollback**.
 7. Reconnect through a known-good LAN or mesh path and select **Confirm working** before the rollback timer expires.
-8. If using WAN 3, open **USB WAN** and configure the phone tether and optional PdaNet proxy settings.
+8. If using WAN 3, connect a data-capable USB cable, unlock the Android phone, enable USB tethering, then open **Android USB tether** and enable WAN 3.
 9. Use **Connection speed test** only after the basic health status is correct.
 
 Keep at least one LAN or mesh management path available when changing port roles. Installation alone is safe, but applying port roles intentionally rewrites AREDN advanced-network include files and reloads networking.
@@ -236,11 +236,11 @@ ip -4 route show table 102
 ip -4 route show table 103
 ```
 
-## Ports, PdaNet, and GPS
+## Ports, Android USB Tether, and GPS
 
 The UI follows AREDN's advanced Ports layout. Each Ethernet port receives one untagged role—LAN, WAN 1, WAN 2, or disabled—and may carry tagged DtD VLAN 2. Port application is opt-in and protected by a timed rollback. WAN 1 is not offered as an Ethernet role while AREDN Wi-Fi client mode owns it.
 
-PdaNet is expected over a data-capable USB cable into the hAP USB host. The hAP obtains `wan3` DHCP on an existing RNDIS/CDC kernel network interface and uses the proxy address, port, and optional credentials entered by the administrator. PollyWAN does not install or replace USB kernel modules; unsupported kernels leave WAN 3 down without route or firewall changes.
+For WAN 3, connect a data-capable USB cable, unlock the Android phone, open Android hotspot/tethering settings, enable USB tethering, enable WAN 3 in PollyWAN, wait for DHCP, and verify health before selecting WAN 3. USB charging alone is insufficient. Supported Android phones normally expose RNDIS, CDC Ethernet, or CDC NCM; driver availability depends on the AREDN kernel and hardware. PollyWAN does not install or replace USB kernel modules, so unsupported kernels leave WAN 3 down without route changes while WAN 1 and WAN 2 remain usable.
 
 A disabled installation does not remap ports, change radio modes, scan USB, open serial GPS devices, edit gpsd, change AREDN GPS time/location settings, or change USB power. WAN 3 scans only `/sys/class/net` after explicit enablement; `/dev/ttyACM0` and `/dev/ttyUSB0` remain owned by AREDN/gpsd.
 
@@ -283,7 +283,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r26.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r27.apk' -print -exec sha256sum {} \;
 ```
 
 A successful static verifier is not a substitute for the package build, exact kernel-ABI dependency check, disabled-install GPS test, port rollback test, or physical hAP validation described in [docs/multiwan-verification.md](docs/multiwan-verification.md).
