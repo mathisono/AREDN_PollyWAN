@@ -128,9 +128,9 @@ Keep at least one LAN or mesh management path available while changing Ethernet 
 
 ## Local WAN candidates
 
-- `wan` — WAN1. Uses AREDN Wi-Fi client mode when a radio owns logical interface `wan`; otherwise it uses administrator-selected Ethernet ports.
+- `wan` — WAN 1. Uses AREDN Wi-Fi client mode when a radio owns logical interface `wan`; otherwise it uses administrator-selected Ethernet ports.
 - `wan2` — WAN2 on administrator-selected Ethernet ports.
-- `wan3` — optional Android USB-tethered Ethernet using RNDIS, CDC Ethernet, or CDC NCM.
+- `wan3` — Android USB tether; optional Android USB-tethered Ethernet using RNDIS, CDC Ethernet, or CDC NCM.
 - Remote Mesh WAN — the Babel-learned default in table 22; it is not treated as a fourth local candidate.
 
 Wi-Fi WAN and Ethernet WAN1 are mutually exclusive because AREDN assigns both the logical interface name `wan`. PollyWAN observes the existing radio configuration and does not change radio modes.
