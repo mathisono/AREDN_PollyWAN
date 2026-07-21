@@ -13,13 +13,19 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: main
-          fetch-depth: 0
+          fetch-depth: 1
+          show-progress: false
       - name: Install test tools
-        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq busybox rsync
+        run: |
+          if ! command -v busybox >/dev/null 2>&1 || ! command -v rsync >/dev/null 2>&1; then
+            sudo apt-get update -qq >/dev/null
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq busybox rsync >/dev/null
+          fi
       - name: Repair README assertions and content manifest
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
+          trap 'rc=$?; echo "repair failed at shell line $LINENO"; if [ -f /tmp/pollywan-verify.log ]; then echo "--- verifier tail ---"; tail -n 80 /tmp/pollywan-verify.log; fi; exit $rc' ERR
 
           python3 - <<'PY'
           from pathlib import Path
@@ -34,8 +40,8 @@ jobs:
           path.write_text(source)
           PY
 
-          grep -F -- '`wan` — WAN 1' README.md
-          grep -F -- '`wan3` — Android USB tether' README.md
+          grep -F -- '`wan` — WAN 1' README.md >/dev/null
+          grep -F -- '`wan3` — Android USB tether' README.md >/dev/null
 
           cat > .github/workflows/verify.yml <<'EOF'
           name: verify
@@ -67,7 +73,7 @@ jobs:
           )"
 
           sed -i "s/^content_manifest_sha256=.*/content_manifest_sha256=$actual_manifest/" SYNC_SOURCE
-          ./tests/verify.sh
+          ./tests/verify.sh >/tmp/pollywan-verify.log 2>&1
 
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
