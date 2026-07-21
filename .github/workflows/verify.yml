@@ -28,6 +28,8 @@ jobs:
           : > /tmp/pollywan-verify.log
           trap 'rc=$?; echo "repair failed at shell line $LINENO" >>/tmp/pollywan-verify.log; exit $rc' ERR
 
+          cp .github/workflows/verify.yml /tmp/pollywan-repair-workflow.yml
+
           python3 - <<'PY'
           from pathlib import Path
 
@@ -76,9 +78,11 @@ jobs:
           sed -i "s/^content_manifest_sha256=.*/content_manifest_sha256=$actual_manifest/" SYNC_SOURCE
           ./tests/verify.sh >/tmp/pollywan-verify.log 2>&1
 
+          mv /tmp/pollywan-repair-workflow.yml .github/workflows/verify.yml
+
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add README.md SYNC_SOURCE .github/workflows/verify.yml
+          git add README.md SYNC_SOURCE
 
           if git diff --cached --quiet; then
             echo 'No metadata repair was necessary.' >>/tmp/pollywan-verify.log
