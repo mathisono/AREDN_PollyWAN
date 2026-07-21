@@ -25,7 +25,8 @@ jobs:
         shell: bash
         run: |
           set -Eeuo pipefail
-          trap 'rc=$?; echo "repair failed at shell line $LINENO"; if [ -f /tmp/pollywan-verify.log ]; then echo "--- verifier tail ---"; tail -n 80 /tmp/pollywan-verify.log; fi; exit $rc' ERR
+          : > /tmp/pollywan-verify.log
+          trap 'rc=$?; echo "repair failed at shell line $LINENO" >>/tmp/pollywan-verify.log; exit $rc' ERR
 
           python3 - <<'PY'
           from pathlib import Path
@@ -80,9 +81,16 @@ jobs:
           git add README.md SYNC_SOURCE .github/workflows/verify.yml
 
           if git diff --cached --quiet; then
-            echo 'No metadata repair was necessary.'
+            echo 'No metadata repair was necessary.' >>/tmp/pollywan-verify.log
             exit 0
           fi
 
-          git commit -m 'Fix static verification after README refresh'
-          git push origin HEAD:main
+          git commit -m 'Fix static verification after README refresh' >>/tmp/pollywan-verify.log 2>&1
+          git push origin HEAD:main >>/tmp/pollywan-verify.log 2>&1
+      - name: Upload verifier diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pollywan-verifier-diagnostics
+          path: /tmp/pollywan-verify.log
+          if-no-files-found: error
