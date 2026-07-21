@@ -7,11 +7,12 @@ permissions:
   contents: write
 jobs:
   repair-static-metadata:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
       - name: Install test tools
         run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq busybox rsync
@@ -78,4 +79,4 @@ jobs:
           fi
 
           git commit -m 'Fix static verification after README refresh'
-          git push
+          git push origin HEAD:main
