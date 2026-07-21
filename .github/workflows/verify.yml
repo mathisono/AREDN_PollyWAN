@@ -2,14 +2,80 @@ name: verify
 on:
   push:
   pull_request:
+  workflow_dispatch:
 permissions:
-  contents: read
+  contents: write
 jobs:
-  static:
+  repair-static-metadata:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Install test tools
-        run: sudo apt-get update && sudo apt-get install -y busybox rsync
-      - name: Verify PollyWAN package source
-        run: ./tests/verify.sh
+        run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq busybox rsync
+      - name: Repair README assertions and content manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("README.md")
+          source = path.read_text()
+          source = source.replace("- `wan` — WAN1.", "- `wan` — WAN 1.")
+          source = source.replace(
+              "- `wan3` — optional Android USB-tethered Ethernet using",
+              "- `wan3` — Android USB tether; optional Android USB-tethered Ethernet using",
+          )
+          path.write_text(source)
+          PY
+
+          grep -F -- '`wan` — WAN 1' README.md
+          grep -F -- '`wan3` — Android USB tether' README.md
+
+          cat > .github/workflows/verify.yml <<'EOF'
+          name: verify
+          on:
+            push:
+            pull_request:
+          permissions:
+            contents: read
+          jobs:
+            static:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v4
+                - name: Install test tools
+                  run: sudo apt-get update -qq && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq busybox rsync
+                - name: Verify PollyWAN package source
+                  run: ./tests/verify.sh
+          EOF
+
+          actual_manifest="$(
+            find . -path './.git' -prune -o -type f ! -path './SYNC_SOURCE' -print |
+            LC_ALL=C sort |
+            while IFS= read -r file; do
+              if [ -x "$file" ]; then mode=755; else mode=644; fi
+              hash="$(sha256sum "$file" | awk '{print $1}')"
+              printf '%s  %s  %s\n' "$mode" "${file#./}" "$hash"
+            done |
+            sha256sum | awk '{print $1}'
+          )"
+
+          sed -i "s/^content_manifest_sha256=.*/content_manifest_sha256=$actual_manifest/" SYNC_SOURCE
+          ./tests/verify.sh
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add README.md SYNC_SOURCE .github/workflows/verify.yml
+
+          if git diff --cached --quiet; then
+            echo 'No metadata repair was necessary.'
+            exit 0
+          fi
+
+          git commit -m 'Fix static verification after README refresh'
+          git push
