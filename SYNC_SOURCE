@@ -6,5 +6,4 @@ integration_path=packages/aredn-multiwan
 sync_contract=standalone-root-equals-integration-subtree
 content_manifest_algorithm=sha256-of-lines-normalized-mode-path-file_sha256
 content_manifest_excludes=SYNC_SOURCE
-content_manifest_sha256=8e9324458f0997453dbbcb6218c0eadad872a137b39d917cd14339ed7f46cac9
-ci_verification_note=final-static-check
+content_manifest_sha256=618a1b88c691ea1fbe4737644833e2e2f21ec91b69ef2b340c16f9cb72689ecc

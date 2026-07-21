@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aredn-multiwan
 PKG_VERSION:=0.1.0
-PKG_RELEASE:=27
+PKG_RELEASE:=28
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=AREDN contributors
 PKGARCH:=all
@@ -111,6 +111,7 @@ define Package/aredn-multiwan/install
 
 	$(INSTALL_DIR) $(1)/www/cgi-bin/apps/aredn-multiwan
 	$(INSTALL_BIN) ./files/www/cgi-bin/apps/aredn-multiwan/admin $(1)/www/cgi-bin/apps/aredn-multiwan/
+	$(INSTALL_BIN) ./files/www/cgi-bin/apps/aredn-multiwan/status.json $(1)/www/cgi-bin/apps/aredn-multiwan/
 	$(INSTALL_DIR) $(1)/www/apps/aredn-multiwan
 	$(INSTALL_DATA) ./files/www/apps/aredn-multiwan/icon.svg $(1)/www/apps/aredn-multiwan/
 	$(INSTALL_DATA) ./files/www/apps/aredn-multiwan/help.html $(1)/www/apps/aredn-multiwan/
@@ -122,6 +123,7 @@ define Package/aredn-multiwan/install
 	$(INSTALL_DATA) ./docs/multiwan-link-calibration.md $(1)/usr/share/doc/aredn-multiwan/
 	$(INSTALL_DATA) ./docs/multiwan-mesh-wan.md $(1)/usr/share/doc/aredn-multiwan/
 	$(INSTALL_DATA) ./docs/multiwan-verification.md $(1)/usr/share/doc/aredn-multiwan/
+	$(INSTALL_DATA) ./docs/aredn-sysinfo-integration-plan.md $(1)/usr/share/doc/aredn-multiwan/
 	$(INSTALL_DATA) ./tools/openclaw-build-test-prompt.md $(1)/usr/share/doc/aredn-multiwan/
 endef
 

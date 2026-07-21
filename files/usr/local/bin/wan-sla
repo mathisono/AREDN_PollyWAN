@@ -9,16 +9,21 @@ export PATH LC_ALL=C
 
 STATE_DIR=/tmp/wan-sla
 STATUS_FILE="$STATE_DIR/status.json"
+TELEMETRY_FILE="$STATE_DIR/telemetry.json"
 CANDIDATE_FILE="$STATE_DIR/candidates.tsv"
 LOCK_DIR="$STATE_DIR/.lock"
 PROMOTE_FILE="$STATE_DIR/promote-candidate"
 STREAK_FILE="$STATE_DIR/promote-streak"
 SWITCH_FILE="$STATE_DIR/last-switch"
 INHIBIT_FILE="$STATE_DIR/inhibit"
+EXPORT_CANDIDATE_FILE="$STATE_DIR/export-recover-candidate"
+EXPORT_STREAK_FILE="$STATE_DIR/export-recover-streak"
+EXPORT_CHANGE_FILE="$STATE_DIR/last-export-change"
 CONFIG_PACKAGE=aredn
 CONFIG_SECTION=multiwan
 REMOTE_MESH_TABLE=22
 WAN1_TRANSPORT=unknown
+PACKAGE_VERSION=0.1.0-r28
 
 mkdir -p "$STATE_DIR" || exit 1
 
@@ -99,24 +104,27 @@ calibration_configured()
 
 health_url()
 {
-    url="$(uci_get health_url)"
+    option="${1:-health_url}"
+    url="$(uci_get "$option")"
+    if [ "$option" != health_url ] && [ -z "$url" ]; then return 1; fi
     case "$url" in
         https://*/*) ;;
-        *) printf '%s\n' 'https://connectivitycheck.gstatic.com/generate_204'; return ;;
+        *) [ "$option" = health_url ] && printf '%s\n' 'https://connectivitycheck.gstatic.com/generate_204' || return 1; return ;;
     esac
     host="${url#https://}"; host="${host%%/*}"
     case "$host" in
-        ''|*:*|*[^A-Za-z0-9.-]*|.*|*..*|*.) printf '%s\n' 'https://connectivitycheck.gstatic.com/generate_204' ;;
+        ''|*:*|*[^A-Za-z0-9.-]*|.*|*..*|*.) [ "$option" = health_url ] && printf '%s\n' 'https://connectivitycheck.gstatic.com/generate_204' || return 1 ;;
         *) printf '%s\n' "$url" ;;
     esac
 }
 
 health_code_allowed()
 {
-    code="$1"
-    codes="$(uci_get health_expected_codes)"
+    code="$1"; option="${2:-health_expected_codes}"
+    codes="$(uci_get "$option")"
     [ -n "$codes" ] || codes=204
-    for allowed in $codes; do
+    old_ifs="$IFS"; IFS=', '; set -- $codes; IFS="$old_ifs"
+    for allowed in "$@"; do
         case "$allowed" in
             *[!0-9]*|'') continue ;;
             *) [ "$code" = "$allowed" ] && return 0 ;;
@@ -148,32 +156,46 @@ gateway_icmp_probe()
 
 https_probe()
 {
-    name="$1"; source="$2"
+    name="$1"; source="$2"; url_option="${3:-health_url}"; codes_option="${4:-health_expected_codes}"
     valid_ipv4 "$source" || return 1
-    url="$(health_url)"
+    url="$(health_url "$url_option")" || return 1
     set -- --silent --show-error --fail --proto '=https' --proto-redir '=https' --max-redirs 0 \
         --connect-timeout 5 --max-time 12 --interface "$source" --output /dev/null --write-out '%{http_code}'
     set -- "$@" --proxy ''
     code="$(curl "$@" "$url" 2>/dev/null || true)"
-    health_code_allowed "$code"
+    health_code_allowed "$code" "$codes_option" || return 1
+    PROBE_ENDPOINT="$url"
+    return 0
 }
 
 availability_probe()
 {
     name="$1"; device="$2"; source="$3"; gateway="$4"
+    GATEWAY_REACHABLE=0
+    UPSTREAM_REACHABLE=0
+    PROBE_ENDPOINT=
     if ! route_valid "$device" "$source" "$gateway"; then
         PROBE_REASON=route_invalid
         return 1
     fi
     if gateway_icmp_probe "$device" "$source" "$gateway"; then
-        PROBE_REASON=gateway_icmp
-        return 0
+        GATEWAY_REACHABLE=1
     fi
     if https_probe "$name" "$source"; then
+        UPSTREAM_REACHABLE=1
         PROBE_REASON=https_reachable
         return 0
     fi
-    PROBE_REASON=probe_failed
+    if https_probe "$name" "$source" health_url_secondary health_secondary_expected_codes; then
+        UPSTREAM_REACHABLE=1
+        PROBE_REASON=https_secondary_reachable
+        return 0
+    fi
+    if [ "$GATEWAY_REACHABLE" = 1 ]; then
+        PROBE_REASON=upstream_unreachable
+    else
+        PROBE_REASON=gateway_and_upstream_unreachable
+    fi
     return 1
 }
 
@@ -197,6 +219,44 @@ failure_count()
     if [ "$action" = reset ]; then count=0; else count=$((count + 1)); fi
     printf '%s\n' "$count" > "$file"
     printf '%s\n' "$count"
+}
+
+private_table()
+{
+    case "$1" in wan) echo 101 ;; wan2) echo 102 ;; wan3) echo 103 ;; *) echo null ;; esac
+}
+
+last_epoch_or_null()
+{
+    value="$(cat "$1" 2>/dev/null || true)"
+    valid_uint "$value" && printf '%s\n' "$value" || printf 'null\n'
+}
+
+set_export_change_now()
+{
+    date +%s > "$EXPORT_CHANGE_FILE"
+}
+
+reset_export_recovery()
+{
+    : > "$EXPORT_CANDIDATE_FILE"
+    printf '0\n' > "$EXPORT_STREAK_FILE"
+}
+
+export_recovery_ready()
+{
+    candidate="$1"; required="$2"; hold_down="$3"
+    now="$(date +%s)"
+    last="$(cat "$EXPORT_CHANGE_FILE" 2>/dev/null || true)"
+    valid_uint "$last" || last=0
+    [ $((now - last)) -ge "$hold_down" ] || return 1
+    current="$(cat "$EXPORT_CANDIDATE_FILE" 2>/dev/null || true)"
+    streak="$(cat "$EXPORT_STREAK_FILE" 2>/dev/null || true)"
+    valid_uint "$streak" || streak=0
+    if [ "$current" = "$candidate" ]; then streak=$((streak + 1)); else current="$candidate"; streak=1; fi
+    printf '%s\n' "$current" > "$EXPORT_CANDIDATE_FILE"
+    printf '%s\n' "$streak" > "$EXPORT_STREAK_FILE"
+    [ "$streak" -ge "$required" ]
 }
 
 result_values()
@@ -243,23 +303,26 @@ evaluate_candidate()
     name="$1"; mode="$2"; min_score="$3"; result_ttl="$4"; calibration_interval="$5"; failure_limit="$6"
 
     if ! candidate_enabled "$name"; then
-        printf '%s|0|0|unknown|0|0||disabled|0|disabled|standby|%s:0\n' "$name" "$(uci_get active)"
+        printf '%s|0|0|0|0|0|0|unknown|0|0||disabled|0|disabled|standby|%s:0|| | |%s|0\n' "$name" "$(uci_get active)" "$(private_table "$name")"
         return
     fi
     values="$(inspect_candidate "$name" 2>/dev/null || true)"
     if [ -z "$values" ]; then
         failure_count "$name" fail >/dev/null
         role=standby; [ "$name" = "$(uci_get active)" ] && role=active
-        printf '%s|0|0|down|0|0||interface_down|0|interface_down|%s|%s:0\n' "$name" "$role" "$(uci_get active)"
+        printf '%s|1|0|0|0|0|0|down|0|0||interface_down|0|interface_down|%s|%s:0|| | |%s|0\n' "$name" "$role" "$(uci_get active)" "$(private_table "$name")"
         return
     fi
     old_ifs="$IFS"; IFS='|'; set -- $values; IFS="$old_ifs"
-    device="$1"
+    device="$1"; source="$2"; gateway="${3:-}"
 
     current_active="$(uci_get active)"
     selection_role=
     probe_ok=0
     PROBE_REASON=probe_failed
+    GATEWAY_REACHABLE=0
+    UPSTREAM_REACHABLE=0
+    PROBE_ENDPOINT=
     if probe_path "$name" "$values"; then
         probe_ok=1
         failures="$(failure_count "$name" reset)"
@@ -298,9 +361,12 @@ evaluate_candidate()
     route_active=0
     ip -4 route show table 26 default 2>/dev/null | grep -q '^default' && route_active=1
     [ -n "${selection_role:-}" ] || { [ "$name" = "$persisted_active" ] && selection_role=active || selection_role=standby; }
-    printf '%s|1|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s\n' \
-        "$name" "$healthy" "$bin" "$score" "$mbps" "$device" "$reason" "$age" \
-        "$reason" "$selection_role" "$persisted_active:$route_active"
+    route_ok=1
+    [ "$PROBE_REASON" = route_invalid ] && route_ok=0
+    printf '%s|1|1|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s:%s|%s|%s|%s|%s|%s\n' \
+        "$name" "$route_ok" "$GATEWAY_REACHABLE" "$UPSTREAM_REACHABLE" "$healthy" "$UPSTREAM_REACHABLE" \
+        "$bin" "$score" "$mbps" "$device" "$reason" "$age" "$reason" "$selection_role" \
+        "$persisted_active" "$route_active" "$source" "$gateway" "$PROBE_ENDPOINT" "$(private_table "$name")" "$failures"
 }
 
 read_active_line()
@@ -313,7 +379,7 @@ choose_candidate()
 {
     preferred="$1"
     best=''; best_score=-1
-    while IFS='|' read -r name configured healthy bin score mbps device reason age probe_reason selection_role active_route; do
+    while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
         [ "$configured" = 1 ] || continue
         [ "$healthy" = 1 ] || continue
         [ "$score" -gt 0 ] || continue
@@ -328,7 +394,7 @@ choose_healthy_candidate()
 {
     preferred="$1"
     fallback=''
-    while IFS='|' read -r name configured healthy bin score mbps device reason age probe_reason selection_role active_route; do
+    while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
         [ "$configured" = 1 ] || continue
         [ "$healthy" = 1 ] || continue
         [ "$name" = "$preferred" ] && { printf '%s\n' "$name"; return; }
@@ -361,9 +427,11 @@ switch_to()
     line="$(read_active_line "$name")"
     [ -n "$line" ] || return 1
     old_ifs="$IFS"; IFS='|'; set -- $line; IFS="$old_ifs"
-    bin="${4:-unknown}"
-    /usr/local/bin/wan3-manager select "$name" 1 "$bin" 1 || return 1
+    bin="${9:-unknown}"
+    export_eligible="${8:-0}"
+    /usr/local/bin/wan3-manager select "$name" 1 "$bin" "$export_eligible" || return 1
     date +%s > "$SWITCH_FILE"
+    reset_export_recovery
     reset_promotion
 }
 
@@ -375,25 +443,81 @@ write_status()
     ip -4 route show table 28 default | grep -q '^default' && table28=1
     mesh_to_wan="$(aredn_wan_get mesh_to_local_wan)"; [ "$mesh_to_wan" = 1 ] || mesh_to_wan=0
     lan_to_mesh="$(aredn_wan_get lan_to_remote_wan)"; [ "$lan_to_mesh" = 1 ] || lan_to_mesh=0
+    generated="$(date +%s)"
+
+    active_health=unknown
+    active_upstream=false
+    active_gateway=false
+    active_device=
+    active_source=
+    active_gateway_value=
+    active_private_table=null
+    active_probe_endpoint=
+    active_probe_reason=none
+    active_line="$(read_active_line "$active")"
+    if [ -n "$active_line" ]; then
+        old_ifs="$IFS"; IFS='|'; set -- $active_line; IFS="$old_ifs"
+        [ "${7:-0}" = 1 ] && active_health=healthy || active_health=unhealthy
+        [ "${5:-0}" = 1 ] && active_upstream=true || active_upstream=false
+        [ "${4:-0}" = 1 ] && active_gateway=true || active_gateway=false
+        active_device="${12:-}"
+        active_source="${18:-}"
+        active_gateway_value="${19:-}"
+        active_probe_endpoint="${20:-}"
+        active_private_table="${21:-null}"
+        active_probe_reason="${15:-none}"
+    fi
+    selected_default=null
+    ip -4 route show table 26 default 2>/dev/null | grep -q '^default' && selected_default='"0.0.0.0/0"'
 
     tmp="$STATUS_FILE.tmp.$$"
     {
-        printf '{"mode":"%s","active":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
-            "$(json_escape "$mode")" "$(json_escape "$active")" "$(json_escape "$selected_bin")" "$(json_escape "$WAN1_TRANSPORT")" "$(json_escape "$message")" \
+        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":26,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
+            "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" \
+            "$(json_escape "$mode")" "$(json_escape "$active")" "$(json_escape "$active_health")" "$active_upstream" "$active_gateway" \
+            "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
+            "$([ -n "$active_source" ] && [ "$active_source" != ' ' ] && printf '"%s"' "$(json_escape "$active_source")" || printf null)" \
+            "$([ -n "$active_gateway_value" ] && [ "$active_gateway_value" != ' ' ] && printf '"%s"' "$(json_escape "$active_gateway_value")" || printf null)" \
+            "$active_private_table" "$selected_default" "$([ "$table28" = 1 ] && echo true || echo false)" \
+            "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
+            "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" \
+            "$(json_escape "$selected_bin")" "$(json_escape "$WAN1_TRANSPORT")" "$(json_escape "$message")" \
             "$table28" "$table22" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         first=1
-        while IFS='|' read -r name configured healthy bin score mbps device reason age probe_reason selection_role active_route; do
+        while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
             [ "$first" = 1 ] || printf ','
             first=0
             persisted_active="${active_route%:*}"; route_active="${active_route##*:}"
             [ "$route_active" = 1 ] || route_active=0
-            printf '{"name":"%s","configured":%s,"healthy":%s,"bin":"%s","score":%s,"mbps":%s,"device":"%s","reason":"%s","probe_reason":"%s","selection_role":"%s","persisted_active":"%s","route_active":%s,"result_age":%s}' \
-                "$(json_escape "$name")" "$configured" "$healthy" "$(json_escape "$bin")" "$score" "$mbps" \
-                "$(json_escape "$device")" "$(json_escape "$reason")" "$(json_escape "${probe_reason:-$reason}")" \
-                "$(json_escape "${selection_role:-standby}")" "$(json_escape "$persisted_active")" "$route_active" "$age"
+            next="$(cat "$STATE_DIR/next-probe.$name" 2>/dev/null || true)"; valid_uint "$next" || next=0
+            printf '{"name":"%s","configured":%s,"interface_up":%s,"route_valid":%s,"gateway_reachable":%s,"upstream_reachable":%s,"selection_healthy":%s,"export_eligible":%s,"healthy":%s,"bin":"%s","speed_class":"%s","score":%s,"mbps":%s,"device":%s,"source":%s,"gateway":%s,"private_table":%s,"reason":"%s","probe_reason":"%s","selection_role":"%s","persisted_active":"%s","route_active":%s,"result_age":%s,"failure_count":%s,"next_probe_epoch":%s}' \
+                "$(json_escape "$name")" "$configured" \
+                "$([ "$interface_up" = 1 ] && echo true || echo false)" "$([ "$route_valid" = 1 ] && echo true || echo false)" \
+                "$([ "$gateway_reachable" = 1 ] && echo true || echo false)" "$([ "$upstream_reachable" = 1 ] && echo true || echo false)" \
+                "$([ "$healthy" = 1 ] && echo true || echo false)" "$([ "$export_eligible" = 1 ] && echo true || echo false)" "$healthy" \
+                "$(json_escape "$bin")" "$(json_escape "$bin")" "$score" "$mbps" \
+                "$([ -n "$device" ] && printf '"%s"' "$(json_escape "$device")" || printf null)" \
+                "$([ -n "$source" ] && [ "$source" != ' ' ] && printf '"%s"' "$(json_escape "$source")" || printf null)" \
+                "$([ -n "$gateway" ] && [ "$gateway" != ' ' ] && printf '"%s"' "$(json_escape "$gateway")" || printf null)" \
+                "${private_table:-null}" "$(json_escape "$reason")" "$(json_escape "${probe_reason:-$reason}")" \
+                "$(json_escape "${selection_role:-standby}")" "$(json_escape "$persisted_active")" "$route_active" "$age" "${failures:-0}" "$next"
         done < "$CANDIDATE_FILE"
         printf ']}\n'
     } > "$tmp" && mv "$tmp" "$STATUS_FILE"
+
+    health="$active_health"
+    [ "$(uci_get enabled)" = 1 ] || health=disabled
+    ttmp="$TELEMETRY_FILE.tmp.$$"
+    printf '{"schema_version":1,"package_version":"%s","enabled":%s,"mode":"%s","active":%s,"health":"%s","upstream_reachable":%s,"gateway_reachable":%s,"device":%s,"source":%s,"gateway":%s,"default_route":%s,"private_table":%s,"selected_table":%s,"mesh_exported":%s,"export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s}\n' \
+        "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" "$(json_escape "$mode")" \
+        "$(case "$active" in wan|wan2|wan3) printf '"%s"' "$active" ;; *) printf null ;; esac)" \
+        "$(json_escape "$health")" "$active_upstream" "$active_gateway" \
+        "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
+        "$([ -n "$active_source" ] && [ "$active_source" != ' ' ] && printf '"%s"' "$(json_escape "$active_source")" || printf null)" \
+        "$([ -n "$active_gateway_value" ] && [ "$active_gateway_value" != ' ' ] && printf '"%s"' "$(json_escape "$active_gateway_value")" || printf null)" \
+        "$selected_default" "$active_private_table" "$([ "$selected_default" = null ] && echo null || echo 26)" \
+        "$([ "$table28" = 1 ] && echo true || echo false)" "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
+        > "$ttmp" && mv "$ttmp" "$TELEMETRY_FILE"
 }
 
 acquire_eval_lock()
@@ -470,23 +594,34 @@ evaluate_once()
     best="$1"
 
     active_line="$(read_active_line "$active")"
-    active_healthy=0; active_score=0; active_bin=unknown
+    active_healthy=0; active_score=0; active_bin=unknown; active_upstream=0
     if [ -n "$active_line" ]; then
         old_ifs="$IFS"; IFS='|'; set -- $active_line; IFS="$old_ifs"
-        active_healthy="$3"; active_bin="$4"; active_score="$5"
+        active_upstream="${5:-0}"
+        active_healthy="${7:-0}"
+        active_bin="${9:-unknown}"
+        active_score="${10:-0}"
+    fi
+    export_count="$(number_setting mesh_export_recover_count 3 1 10)"
+    export_hold="$(number_setting mesh_export_hold_down 60 0 3600)"
+    if [ "$active_upstream" != 1 ]; then
+        if ip -4 route show table 28 default 2>/dev/null | grep -q '^default'; then set_export_change_now; fi
+        reset_export_recovery
     fi
 
     message='status only'
     if [ "$mode" = manual ]; then
         if [ "$active_healthy" = 1 ]; then
-            /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" 1 >/dev/null 2>&1 || true
+            export_ok=0
+            [ "$active_upstream" = 1 ] && export_recovery_ready "$active" "$export_count" "$export_hold" && export_ok=1
+            /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" "$export_ok" >/dev/null 2>&1 || true
             message="manual selection retained: $active"
         else
             manual_recovery="$(choose_healthy_candidate "$preferred")"
             if [ -n "$manual_recovery" ] && switch_to "$manual_recovery" >/dev/null 2>&1; then
                 active="$(uci_get active)"
                 new_line="$(read_active_line "$active")"
-                [ -n "$new_line" ] && active_bin="$(printf '%s' "$new_line" | awk -F'|' '{print $4}')" || active_bin=none
+                [ -n "$new_line" ] && active_bin="$(printf '%s' "$new_line" | awk -F'|' '{print $9}')" || active_bin=none
                 message="manual selected WAN failed; selected healthy fallback $active"
             else
                 /usr/local/bin/wan3-manager withdraw 'Manual selected local WAN failed' 1 >/dev/null 2>&1 || true
@@ -504,7 +639,7 @@ evaluate_once()
         if switch_to "$best" >/dev/null 2>&1; then
             active="$(uci_get active)"
             new_line="$(read_active_line "$active")"
-            [ -n "$new_line" ] && active_bin="$(printf '%s' "$new_line" | awk -F'|' '{print $4}')" || active_bin=none
+            [ -n "$new_line" ] && active_bin="$(printf '%s' "$new_line" | awk -F'|' '{print $9}')" || active_bin=none
             message="hard failure or ineligible path: selected $active immediately"
         else
             /usr/local/bin/wan3-manager withdraw 'Immediate fallback candidate failed' 1 >/dev/null 2>&1 || true
@@ -512,13 +647,15 @@ evaluate_once()
             message='fallback candidate failed; local defaults withdrawn'
         fi
     elif [ "$best" = "$active" ]; then
-        /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" 1 >/dev/null 2>&1 || true
+        export_ok=0
+        [ "$active_upstream" = 1 ] && export_recovery_ready "$active" "$export_count" "$export_hold" && export_ok=1
+        /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" "$export_ok" >/dev/null 2>&1 || true
         message="$active remains the best eligible local path"
         reset_promotion
     else
         target_line="$(read_active_line "$best")"
         old_ifs="$IFS"; IFS='|'; set -- $target_line; IFS="$old_ifs"
-        target_score="$5"
+        target_score="${10:-0}"
         should_promote=0
         if [ "$target_score" -gt "$active_score" ]; then should_promote=1; fi
         if [ "$target_score" -eq "$active_score" ] && [ "$target_score" -eq 1 ] && [ "$best" = "$preferred" ]; then should_promote=1; fi
@@ -543,7 +680,7 @@ evaluate_once()
 
     active="$(uci_get active)"
     active_line="$(read_active_line "$active")"
-    if [ -n "$active_line" ]; then active_bin="$(printf '%s' "$active_line" | awk -F'|' '{print $4}')"; else active_bin=none; fi
+    if [ -n "$active_line" ]; then active_bin="$(printf '%s' "$active_line" | awk -F'|' '{print $9}')"; else active_bin=none; fi
     write_status "$mode" "$active" "$active_bin" "$message"
     rm -rf "$LOCK_DIR"
     trap - EXIT HUP INT TERM

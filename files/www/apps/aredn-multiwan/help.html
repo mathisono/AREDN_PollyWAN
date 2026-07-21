@@ -6,6 +6,8 @@
 <p>Connect a data-capable USB cable, unlock the Android phone, open hotspot/tethering settings, enable USB tethering, enable WAN 3 in PollyWAN, wait for DHCP, then verify health before selecting WAN 3. USB charging alone is insufficient.</p>
 <p>The phone supplies DHCP, gateway, DNS, and NAT Internet access. Supported phones normally expose RNDIS, CDC Ethernet, or CDC NCM, but driver availability depends on the AREDN kernel and hardware. PollyWAN reports runtime USB-network support and leaves WAN 1/WAN 2 usable if WAN 3 USB support is unavailable.</p>
 <div class="ok"><strong>GPS safety:</strong> when WAN 3 is disabled, PollyWAN never opens <code>/dev/ttyACM0</code> or <code>/dev/ttyUSB0</code>, edits gpsd, changes AREDN GPS time/location, changes radio mode, or changes USB power. It searches only <code>/sys/class/net</code> after WAN 3 is explicitly enabled.</div>
+<div class="ok"><strong>Health safety:</strong> gateway reachability is diagnostic only. A local gateway that answers ping does not prove Internet reachability; PollyWAN requires a source-bound external HTTPS health check before a path is upstream reachable.</div>
+<div class="ok"><strong>Mesh export damping:</strong> table 28 is withdrawn on the first failed external upstream probe. Local failover keeps its own hysteresis, and recovered exits are not re-advertised until the export recovery count and hold-down pass.</div>
 <h2>Health and Selection</h2>
 <p>Health validates the private table, source-bound gateway reachability, and direct source-bound HTTPS using <code>curl --interface "$SOURCE" --proxy ''</code>. Cloudflare speed tests use the same direct source-bound path. Node-to-node iperf3 tests are unchanged.</p>
 <h2>Recovery</h2>

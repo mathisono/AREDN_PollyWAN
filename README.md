@@ -23,7 +23,7 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current package release is `0.1.0-r27`.
+The current package release is `0.1.0-r28`.
 
 ## Release files
 
@@ -59,7 +59,7 @@ Verify downloaded release files with `SHA256SUMS-release.txt`.
 
 ### Recommended: AREDN web interface
 
-1. Download `aredn-multiwan-0.1.0-r27.apk` to your computer.
+1. Download `aredn-multiwan-0.1.0-r28.apk` to your computer.
 2. Log in to the AREDN node as an administrator.
 3. Open **Packages**.
 4. Under **Upload Package**, choose the PollyWAN APK.
@@ -71,7 +71,7 @@ Verify downloaded release files with `SHA256SUMS-release.txt`.
 http://NODE/a/multiwan
 ```
 
-The package remains disabled after installation. Installing it does not reload networking or apply Ethernet port roles.
+Release r28 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
 
 AREDN already supplies `iperf3`, so a separate iperf package is not normally required. Release r27 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`; these were already present on the tested AREDN 4.26.7.0 hAP ac2 image.
 
@@ -90,6 +90,10 @@ Do not run `node-setup`, reload networking, or apply port roles merely to finish
 ```sh
 ssh root@NODE
 cd /tmp
+
+VERSION='0.1.0-r28'
+TAG="v${VERSION}"
+APK="aredn-multiwan-${VERSION}.apk"
 
 curl -fL --retry 3 \
   -o aredn-multiwan-0.1.0-r27.apk \
@@ -143,7 +147,18 @@ Uses the selected WAN while it remains healthy. If it fails, PollyWAN immediatel
 
 ### Automatic
 
-Ranks only healthy WANs using the newest valid speed class:
+## Selection Modes
+
+PollyWAN exposes two operator-facing modes:
+
+- **Manual** — uses the selected connection while it is healthy. If it fails, PollyWAN immediately selects the best healthy fallback. It does not automatically return to the original preferred connection unless the operator chooses it again or enables the advanced return option.
+- **Automatic** — ranks only healthy WANs by the newest valid speed class: Fast, Medium, Low, or Unknown. Same-class Mbps differences do not cause switching. A higher class requires consecutive observations before promotion, while a failed current WAN is replaced immediately.
+
+Health and speed are separate. Health checks decide whether a WAN is usable. Speed tests only classify healthy WANs for Automatic ranking. A failed or expired speed test never marks an otherwise healthy WAN down.
+
+Gateway reachability is diagnostic only. A local gateway that responds to ICMP does not make a WAN healthy unless the source-bound external HTTPS health check also succeeds. If the active WAN fails that raw upstream check, table 28 is withdrawn immediately so the mesh stops using the known-bad exit while local selection hysteresis decides whether to keep or replace the active path. Recovered exits are re-advertised only after the configured export recovery count and hold-down.
+
+Default classes:
 
 - Low: less than 5 Mbps
 - Medium: 5 through 30 Mbps
@@ -327,7 +342,15 @@ Tunnel ingress is blocked from local and remote Internet defaults while PollyWAN
 /usr/local/bin/wan-tunnel-guard status
 ```
 
-Example speed tests:
+Package-owned public telemetry is available at:
+
+```text
+http://NODE/cgi-bin/apps/aredn-multiwan/status.json
+```
+
+It returns schema version 1 from `/tmp/wan-sla/telemetry.json`, uses JSON `null` for unavailable scalar values, and does not run probes or modify routes. Integration into `/cgi-bin/sysinfo.json` is deferred until AREDN core accepts a reviewed hook; r28 does not replace AREDN core sysinfo files.
+
+Run bounded speed tests from SSH:
 
 ```sh
 /usr/local/bin/wan-speed-test route-check wan
@@ -381,7 +404,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r27.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r28.apk' -print -exec sha256sum {} \;
 ```
 
 Static verification is not a substitute for exact kernel-ABI checks, disabled-install testing, port rollback testing, or physical hardware validation.

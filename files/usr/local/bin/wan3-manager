@@ -22,6 +22,7 @@ BABEL_EXPORT_TABLE=28
 REMOTE_MESH_TABLE=22
 LOCAL_RULE_PREF=145
 LAN_RULE_PREF=45
+EXPORT_CHANGE_FILE=/tmp/wan-sla/last-export-change
 
 mkdir -p "$STATE_DIR" || exit 1
 
@@ -290,6 +291,33 @@ remove_all_main_defaults()
     while ip -4 route del table main default >/dev/null 2>&1; do :; done
 }
 
+default_route_matches()
+{
+    table="$1"; device="$2"; source="$3"; gateway="$4"
+    line="$(ip -4 route show table "$table" default 2>/dev/null | head -n 1 || true)"
+    [ -n "$line" ] || return 1
+    printf '%s\n' "$line" | grep -q "dev $device" || return 1
+    printf '%s\n' "$line" | grep -q "src $source" || return 1
+    if valid_ipv4 "$gateway"; then
+        printf '%s\n' "$line" | grep -q " via $gateway " || return 1
+    else
+        printf '%s\n' "$line" | grep -q ' via ' && return 1
+    fi
+    return 0
+}
+
+connected_route_matches()
+{
+    table="$1"; network="$2"; device="$3"; source="$4"
+    ip -4 route show table "$table" "$network" 2>/dev/null |
+        grep -q "^$network dev $device .*src $source"
+}
+
+policy_rule_matches()
+{
+    ip -4 rule show | grep -q "^$LOCAL_RULE_PREF:.*lookup $LOCAL_TABLE"
+}
+
 install_default()
 {
     table="$1"; device="$2"; source="$3"; gateway="$4"; metric="$5"
@@ -297,6 +325,29 @@ install_default()
         ip -4 route replace table "$table" default via "$gateway" dev "$device" src "$source" metric "$metric" onlink proto static
     else
         ip -4 route replace table "$table" default dev "$device" src "$source" metric "$metric" proto static
+    fi
+}
+
+replace_default_if_needed()
+{
+    table="$1"; device="$2"; source="$3"; gateway="$4"; metric="$5"
+    default_route_matches "$table" "$device" "$source" "$gateway" && return 0
+    install_default "$table" "$device" "$source" "$gateway" "$metric"
+}
+
+replace_connected_if_needed()
+{
+    table="$1"; network="$2"; device="$3"; source="$4"
+    connected_route_matches "$table" "$network" "$device" "$source" && return 0
+    ip -4 route replace table "$table" "$network" dev "$device" src "$source" scope link proto static
+}
+
+withdraw_export_if_needed()
+{
+    if ip -4 route show table "$BABEL_EXPORT_TABLE" default 2>/dev/null | grep -q '^default'; then
+        ip -4 route flush table "$BABEL_EXPORT_TABLE" >/dev/null 2>&1 || return 1
+        mkdir -p "${EXPORT_CHANGE_FILE%/*}" 2>/dev/null || true
+        date +%s > "$EXPORT_CHANGE_FILE"
     fi
 }
 
@@ -310,8 +361,7 @@ logical_device()
 
 ensure_policy_rules()
 {
-    while ip -4 rule del pref "$LOCAL_RULE_PREF" lookup "$LOCAL_TABLE" >/dev/null 2>&1; do :; done
-    ip -4 rule add pref "$LOCAL_RULE_PREF" lookup "$LOCAL_TABLE" >/dev/null 2>&1 || true
+    policy_rule_matches || ip -4 rule add pref "$LOCAL_RULE_PREF" lookup "$LOCAL_TABLE" >/dev/null 2>&1 || true
 
     if [ -r "$LAN_RULE_FILE" ]; then
         old="$(cat "$LAN_RULE_FILE" 2>/dev/null || true)"
@@ -324,8 +374,7 @@ ensure_policy_rules()
     if [ "$(aredn_wan_get lan_dhcp_route)" = 1 ]; then
         lan_device="$(logical_device lan || true)"
         if valid_device "$lan_device"; then
-            while ip -4 rule del pref "$LAN_RULE_PREF" iif "$lan_device" lookup "$LOCAL_TABLE" >/dev/null 2>&1; do :; done
-            ip -4 rule add pref "$LAN_RULE_PREF" iif "$lan_device" lookup "$LOCAL_TABLE" >/dev/null 2>&1 || true
+            ip -4 rule show | grep -q "^$LAN_RULE_PREF:.*iif $lan_device .*lookup $LOCAL_TABLE" || ip -4 rule add pref "$LAN_RULE_PREF" iif "$lan_device" lookup "$LOCAL_TABLE" >/dev/null 2>&1 || true
             printf '%s\n' "$lan_device" > "$LAN_RULE_FILE"
         fi
     fi
@@ -423,23 +472,24 @@ select_wan()
     snapshot_routes "$snapshot" || return 1
 
     ensure_policy_rules
-    remove_all_main_defaults
-    ip -4 route flush table "$LOCAL_TABLE" >/dev/null 2>&1 || true
-    ip -4 route flush table "$LOCAL_SUBNET_TABLE" >/dev/null 2>&1 || true
-    ip -4 route flush table "$BABEL_EXPORT_TABLE" >/dev/null 2>&1 || true
 
     failed=0
-    install_default "$LOCAL_TABLE" "$device" "$source" "$gateway" 1 || failed=1
-    [ "$failed" = 1 ] || ip -4 route replace table "$LOCAL_SUBNET_TABLE" "$network" dev "$device" src "$source" scope link proto static || failed=1
-    [ "$failed" = 1 ] || install_default main "$device" "$source" "$gateway" 1 || failed=1
+    replace_default_if_needed "$LOCAL_TABLE" "$device" "$source" "$gateway" 1 || failed=1
+    [ "$failed" = 1 ] || replace_connected_if_needed "$LOCAL_SUBNET_TABLE" "$network" "$device" "$source" || failed=1
+    [ "$failed" = 1 ] || replace_default_if_needed main "$device" "$source" "$gateway" 1 || failed=1
 
     shared=0
     want_shared=0
     mesh_share_eligible "$bin" "$healthy" && want_shared=1
 
     if [ "$failed" = 0 ] && [ "$want_shared" = 1 ]; then
-        install_default "$BABEL_EXPORT_TABLE" "$device" "$source" "$gateway" 1 || failed=1
+        had_export=0
+        ip -4 route show table "$BABEL_EXPORT_TABLE" default 2>/dev/null | grep -q '^default' && had_export=1
+        replace_default_if_needed "$BABEL_EXPORT_TABLE" "$device" "$source" "$gateway" 1 || failed=1
         [ "$failed" = 1 ] || shared=1
+        if [ "$failed" = 0 ] && [ "$had_export" = 0 ]; then mkdir -p "${EXPORT_CHANGE_FILE%/*}" 2>/dev/null || true; date +%s > "$EXPORT_CHANGE_FILE"; fi
+    elif [ "$failed" = 0 ]; then
+        withdraw_export_if_needed || failed=1
     fi
 
     if [ "$failed" = 1 ]; then

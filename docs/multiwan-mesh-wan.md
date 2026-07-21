@@ -79,7 +79,7 @@ Each enabled candidate—including Wi-Fi WAN 1—must have:
 - a default route in its private table
 - a successful lightweight path probe
 
-Availability is always decided by route validation, source-bound gateway ICMP, and source-bound HTTPS health fallback. Throughput tests are separate, occasional measurements and must not withdraw an otherwise reachable path. A hard interface failure is immediate. The selected path receives the configured application-failure hysteresis, but a standby that fails its current probe is never eligible for promotion.
+Availability is always decided by route validation and source-bound external HTTPS. Gateway ICMP is diagnostic only: a responsive local gateway does not prove Internet reachability. Throughput tests are separate, occasional measurements and must not withdraw an otherwise reachable path. A hard interface failure is immediate. The selected path receives the configured application-failure hysteresis, but a standby that fails its current probe is never eligible for promotion.
 
 ### Speed classes
 
@@ -117,11 +117,12 @@ A candidate below `selection_min_bin`, or without a fresh result, remains health
 
 AREDN's Babel wrapper imports table 28 and installs a learned remote default in table 22. The package therefore uses these rules:
 
-- Table 28 is flushed before every new health decision.
+- Table 28 is withdrawn immediately on the first failed raw upstream probe for the active local WAN, even when table 26 is retained by local selection hysteresis.
 - While the controller is enabled, a managed Babel rule rejects a protocol-`boot` (`proto 3`) default before AREDN's generic default allow. AREDN's stock hotplug-created default is therefore unable to win the brief hotplug-to-evaluation race.
 - The package publishes its qualified table-28 default explicitly as protocol `static`; only that selected, healthy and sufficiently fast route reaches AREDN's normal default-export allow.
 - It is withdrawn immediately on a WAN netifd event, before a fresh evaluation.
 - A remote table-22 route is never placed in table 28.
+- A recovered exit is not re-advertised until the configured mesh export recovery observations and hold-down pass.
 - When no local path qualifies, Babel naturally withdraws this node's exported default.
 
 This prevents stale DHCP, a transient stock hotplug route, or a weak link from remaining advertised as a mesh gateway. Disabling the controller removes the protocol-boot guard and restores ordinary AREDN WAN-1 behavior.

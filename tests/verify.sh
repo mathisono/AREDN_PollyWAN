@@ -1,5 +1,5 @@
 #!/bin/sh
-# Static and disposable-mock verification for the standalone PollyWAN r27 source.
+# Static and disposable-mock verification for the standalone PollyWAN r28 source.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -22,6 +22,7 @@ files/etc/hotplug.d/iface/95-wan3-manager
 files/etc/hotplug.d/net/95-wan3-manager
 files/etc/uci-defaults/95-aredn-multiwan
 files/www/cgi-bin/apps/aredn-multiwan/admin
+files/www/cgi-bin/apps/aredn-multiwan/status.json
 tests/verify.sh
 tests/mock-port-manager.sh
 tests/mock-route-cache.sh
@@ -40,6 +41,7 @@ docs/multiwan-usb-wan.md
 docs/multiwan-link-calibration.md
 docs/multiwan-mesh-wan.md
 docs/multiwan-verification.md
+docs/aredn-sysinfo-integration-plan.md
 tools/openclaw-build-test-prompt.md
 tools/sync-integration.sh
 tests/test-selection-model.py
@@ -81,7 +83,7 @@ done
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
 require_text Makefile 'PKG_VERSION:=0.1.0'
-require_text Makefile 'PKG_RELEASE:=27'
+require_text Makefile 'PKG_RELEASE:=28'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -100,7 +102,10 @@ require_text Makefile 'Package/aredn-multiwan/prerm'
 require_text Makefile 'files/app/partial/multiwan-style.ut'
 require_text Makefile 'files/app/partial/multiwan.ut'
 require_text Makefile 'files/usr/local/bin/wan-speed-test'
+require_text Makefile 'files/www/cgi-bin/apps/aredn-multiwan/status.json'
+require_text Makefile 'docs/aredn-sysinfo-integration-plan.md'
 reject_text Makefile 'files/app/main/multiwan.ut'
+reject_text Makefile '/app/main/sysinfo.ut'
 require_text LICENSE 'GNU General Public License'
 require_text AREDNLicense.txt 'not represented as an official'
 
@@ -121,11 +126,18 @@ require_text "$DEFAULTS" 'set_default port2_role lan'
 require_text "$DEFAULTS" 'set_default port5_dtd 1'
 require_text "$DEFAULTS" 'set_default selection_min_bin low'
 require_text "$DEFAULTS" 'set_default mesh_share_min_bin medium'
+require_text "$DEFAULTS" 'set_default standby_health_interval 90'
+require_text "$DEFAULTS" 'set_default failed_probe_interval 120'
+require_text "$DEFAULTS" 'set_default failed_probe_interval_max 300'
 require_text "$DEFAULTS" "set_default health_url 'https://connectivitycheck.gstatic.com/generate_204'"
 require_text "$DEFAULTS" 'set_default health_expected_codes 204'
+require_text "$DEFAULTS" "set_default health_url_secondary ''"
+require_text "$DEFAULTS" 'set_default health_secondary_expected_codes 200,204'
 require_text "$DEFAULTS" 'set_default failure_count 2'
 require_text "$DEFAULTS" 'set_default promote_count 2'
 require_text "$DEFAULTS" 'set_default hold_down 120'
+require_text "$DEFAULTS" 'set_default mesh_export_recover_count 3'
+require_text "$DEFAULTS" 'set_default mesh_export_hold_down 60'
 require_text "$DEFAULTS" 'set_default speed_result_ttl 21600'
 require_text "$DEFAULTS" 'set_default speed_test_auto 0'
 require_text "$DEFAULTS" 'set_default speed_test_interval 21600'
@@ -212,8 +224,11 @@ require_text "$WAN3" 'restore_route_snapshot'
 require_text "$WAN3" 'function cidr_prefix'
 require_text "$WAN3" 'split(value, parts, "/") == 2'
 require_text "$WAN3" 'connected_prefix_from_cidr "$source/$mask"'
-require_text "$WAN3" 'install_default "$LOCAL_TABLE" "$device" "$source" "$gateway" 1'
-require_text "$WAN3" 'install_default main "$device" "$source" "$gateway" 1'
+require_text "$WAN3" 'replace_default_if_needed "$LOCAL_TABLE" "$device" "$source" "$gateway" 1'
+require_text "$WAN3" 'replace_default_if_needed main "$device" "$source" "$gateway" 1'
+require_text "$WAN3" 'default_route_matches'
+require_text "$WAN3" 'replace_default_if_needed'
+require_text "$WAN3" 'withdraw_export_if_needed'
 require_text "$WAN3" 'table 22 is available'
 reject_text "$WAN3" 'start_proxy'
 reject_text "$WAN3" 'stop_proxy'
@@ -243,11 +258,15 @@ require_text "$SLA" 'ping -c 1 -W 2 -I "$source" "$gateway"'
 require_text "$SLA" 'https_probe'
 require_text "$SLA" '--interface "$source"'
 require_text "$SLA" "--proxy ''"
-require_text "$SLA" 'PROBE_REASON=gateway_icmp'
+reject_text "$SLA" 'PROBE_REASON=gateway_icmp'
 require_text "$SLA" 'PROBE_REASON=https_reachable'
+require_text "$SLA" 'PROBE_REASON=https_secondary_reachable'
 require_text "$SLA" 'PROBE_REASON=route_invalid'
-require_text "$SLA" 'PROBE_REASON=probe_failed'
+require_text "$SLA" 'PROBE_REASON=upstream_unreachable'
+require_text "$SLA" 'PROBE_REASON=gateway_and_upstream_unreachable'
 require_text "$SLA" 'health_expected_codes'
+require_text "$SLA" 'health_url_secondary'
+require_text "$SLA" 'health_secondary_expected_codes'
 require_text "$SLA" 'https://connectivitycheck.gstatic.com/generate_204'
 require_text "$SLA" 'failure_count'
 require_text "$SLA" 'promote_count'
@@ -260,6 +279,17 @@ require_text "$SLA" 'selection_mode=automatic'
 require_text "$SLA" '[ "$raw_score" -eq 1 ] || [ "$raw_score" -ge "$min_score" ]'
 require_text "$SLA" 'table 22 may provide the remote Mesh WAN fallback'
 require_text "$SLA" 'wan1_transport'
+require_text "$SLA" 'TELEMETRY_FILE="$STATE_DIR/telemetry.json"'
+require_text "$SLA" 'PACKAGE_VERSION=0.1.0-r28'
+require_text "$SLA" '"schema_version":1'
+require_text "$SLA" 'active_upstream_reachable'
+require_text "$SLA" 'mesh_exported'
+require_text "$SLA" 'export_recovery_ready'
+require_text "$SLA" 'mesh_export_recover_count'
+require_text "$SLA" 'mesh_export_hold_down'
+require_text "$SLA" 'EXPORT_CANDIDATE_FILE="$STATE_DIR/export-recover-candidate"'
+require_text "$SLA" 'EXPORT_STREAK_FILE="$STATE_DIR/export-recover-streak"'
+require_text "$SLA" 'EXPORT_CHANGE_FILE="$STATE_DIR/last-export-change"'
 
 # Tunnel guards and Babel race prevention.
 GUARD=files/usr/local/bin/wan-tunnel-guard
@@ -327,6 +357,11 @@ require_text files/app/main/status/e/link-calibration.ut 'Expired'
 require_text files/app/main/status/e/link-calibration.ut 'last.valid === true'
 require_text files/app/main/status/e/wan-policy.ut 'private table 101'
 require_text files/app/main/status/e/wan-policy.ut 'tunnel guards'
+require_text files/app/main/status/e/wan-policy.ut 'Gateway reachable'
+require_text files/app/main/status/e/wan-policy.ut 'Upstream reachable'
+require_text files/app/main/status/e/wan-policy.ut 'Selection healthy'
+require_text files/app/main/status/e/wan-policy.ut 'Mesh export eligible'
+require_text files/app/main/status/e/wan-policy.ut 'mesh_export_recover_count'
 require_text files/app/main/status/e/wan-policy.ut 'Use remote Mesh WAN'
 require_text files/app/main/status/e/wan-policy.ut 'Manual'
 require_text files/app/main/status/e/wan-policy.ut 'Automatic'
@@ -340,6 +375,8 @@ done
 # Documentation and two-repository contract.
 require_text README.md '`wan` — WAN 1'
 require_text README.md '`wan3` — Android USB tether'
+require_text README.md 'http://NODE/cgi-bin/apps/aredn-multiwan/status.json'
+require_text README.md 'schema version 1'
 require_text docs/port-roles-and-gps.md 'GPS safety contract'
 require_text docs/port-roles-and-gps.md 'radio0_mode=wan'
 require_text docs/port-roles-and-gps.md '/dev/ttyACM0'
@@ -354,10 +391,12 @@ require_text docs/multiwan-mesh-wan.md 'table 22'
 require_text docs/multiwan-mesh-wan.md 'protocol-`boot`'
 require_text docs/multiwan-verification.md 'Disabled-install, radio, and GPS test'
 require_text docs/multiwan-verification.md 'Wi-Fi WAN ownership'
+require_text docs/aredn-sysinfo-integration-plan.md 'not implemented by the standalone r28 APK'
+require_text docs/aredn-sysinfo-integration-plan.md '/tmp/sysinfo/extensions/'
 require_text tools/openclaw-build-test-prompt.md 'mse-88/hub5'
 require_text tools/openclaw-build-test-prompt.md 'main'
 require_text tools/openclaw-build-test-prompt.md 'Wi-Fi client'
-require_text tools/openclaw-build-test-prompt.md 'r27 requirements'
+require_text tools/openclaw-build-test-prompt.md 'r28 requirements'
 [ "$(wc -c < tools/openclaw-build-test-prompt.md)" -lt 2000 ] || fail 'OpenClaw prompt exceeds 2000 characters'
 require_text SYNC_SOURCE 'standalone_branch=main'
 require_text SYNC_SOURCE 'integration_branch=agent/pollywan-r6'
@@ -456,4 +495,13 @@ require_text files/usr/local/bin/wan3-manager 'function cidr_prefix'
 require_text files/usr/local/bin/wan-route-cache 'function cidr_prefix'
 require_text files/usr/local/bin/wan-route-cache 'connected_prefix_from_cidr "$cidr"'
 
-echo 'PollyWAN r27 static and mock verification passed'
+python3 - <<'PY'
+import json, subprocess
+raw = subprocess.check_output(['sh', 'files/www/cgi-bin/apps/aredn-multiwan/status.json']).decode()
+body = raw.split('\r\n\r\n', 1)[1]
+data = json.loads(body)
+assert data['schema_version'] == 1
+assert data['package_version'] == '0.1.0-r28'
+PY
+
+echo 'PollyWAN r28 static and mock verification passed'
