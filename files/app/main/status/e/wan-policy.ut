@@ -17,6 +17,33 @@ function bounded(value, fallback, minimum, maximum)
     const n = int(value || fallback);
     return n >= minimum && n <= maximum ? n : fallback;
 }
+function validHttpsUrl(value, required)
+{
+    if (!value) return !required;
+    if (substr(value, 0, 8) !== "https://") return false;
+    if (index(value, " ") >= 0 || index(value, "@") >= 0 || index(value, "#") >= 0) return false;
+    const rest = substr(value, 8);
+    const slash = index(rest, "/");
+    if (slash <= 0) return false;
+    const host = substr(rest, 0, slash);
+    return host && index(host, ":") < 0 && index(host, "..") < 0;
+}
+function normalizeCodes(value, fallback)
+{
+    const raw = split(value || fallback, /[, ]+/);
+    let out = [];
+    for (let i = 0; i < length(raw); i++) {
+        if (!raw[i]) continue;
+        const n = int(raw[i]);
+        if (n < 100 || n > 599 || "" + n !== raw[i]) return null;
+        if (index(out, "" + n) < 0) push(out, "" + n);
+    }
+    return length(out) ? join(",", out) : null;
+}
+function requestedValue(name, fallback)
+{
+    return request.args[name] != null ? request.args[name] : fallback;
+}
 function readJson(path)
 {
     const value = fs.readfile(path);
@@ -54,10 +81,20 @@ if (request.env.REQUEST_METHOD === "PUT") {
         const ttl = bounded(request.args.result_ttl, 28800, 300, 86400);
         let interval = bounded(request.args.speed_test_interval, 21600, 900, 86400);
         if (interval > ttl) interval = ttl;
+        const primaryUrl = requestedValue("health_url", uciMesh.get("aredn", "multiwan", "health_url") || "https://connectivitycheck.gstatic.com/generate_204");
+        const secondaryUrl = requestedValue("health_url_secondary", uciMesh.get("aredn", "multiwan", "health_url_secondary") || "");
+        const primaryCodes = normalizeCodes(requestedValue("health_expected_codes", uciMesh.get("aredn", "multiwan", "health_expected_codes") || "204"), "204");
+        const secondaryCodes = normalizeCodes(requestedValue("health_secondary_expected_codes", uciMesh.get("aredn", "multiwan", "health_secondary_expected_codes") || "200,204"), "200,204");
 
         if (enabled === "1" && wifiWan.conflict) {
             error = "Both AREDN radios are configured as WAN clients. Only one radio may own logical WAN 1.";
         }
+        else if (!validHttpsUrl(primaryUrl, true)) error = "Primary probe endpoint must be an HTTPS URL with a host and path.";
+        else if (!primaryCodes) error = "Primary expected response codes must contain valid HTTP status codes.";
+        else if (!validHttpsUrl(secondaryUrl, false)) error = "Secondary probe endpoint must be empty or an HTTPS URL with a host and path.";
+        else if (!secondaryCodes) error = "Secondary expected response codes must contain valid HTTP status codes.";
+        else if (int(request.args.mesh_export_recover_count || 3) < 1 || int(request.args.mesh_export_recover_count || 3) > 10) error = "Export recovery observations must be between 1 and 10.";
+        else if (int(request.args.mesh_export_hold_down || 60) < 0 || int(request.args.mesh_export_hold_down || 60) > 3600) error = "Export recovery hold-down must be between 0 and 3600 seconds.";
         else {
         uciMesh.set("aredn", "multiwan", "enabled", enabled);
         uciMesh.set("aredn", "multiwan", "selection_mode", mode);
@@ -69,6 +106,10 @@ if (request.env.REQUEST_METHOD === "PUT") {
         uciMesh.set("aredn", "multiwan", "selection_min_bin", minbin);
         uciMesh.set("aredn", "multiwan", "mesh_share_min_bin", sharebin);
         uciMesh.set("aredn", "multiwan", "health_interval", health);
+        uciMesh.set("aredn", "multiwan", "health_url", primaryUrl);
+        uciMesh.set("aredn", "multiwan", "health_expected_codes", primaryCodes);
+        uciMesh.set("aredn", "multiwan", "health_url_secondary", secondaryUrl);
+        uciMesh.set("aredn", "multiwan", "health_secondary_expected_codes", secondaryCodes);
         uciMesh.set("aredn", "multiwan", "failure_count", failures);
         uciMesh.set("aredn", "multiwan", "promote_count", promotions);
         uciMesh.set("aredn", "multiwan", "hold_down", hold);
@@ -112,6 +153,21 @@ if (mode === "availability" || mode === "adaptive") mode = "automatic";
 const active = uciMesh.get("aredn", "multiwan", "active") || "wan";
 const status = readJson("/tmp/wan-sla/status.json");
 const candidates = status && status.candidates || [];
+function meshExportState(c)
+{
+    if (status && status.mesh_exported) return "mesh advertisement active";
+    if (c && c.upstream_reachable && c.export_eligible) return "mesh advertisement recovering";
+    return "mesh advertisement withdrawn";
+}
+function reachabilityState(c)
+{
+    if (!c) return "No current probe";
+    if (c.gateway_reachable && !c.upstream_reachable) return "gateway reachable, Internet unavailable";
+    if (c.upstream_reachable && !c.export_eligible) return "Internet reachable, retained locally";
+    if (!c.upstream_reachable && c.selection_healthy) return "Internet unavailable, local failure hysteresis active";
+    if (c.upstream_reachable) return "Internet reachable";
+    return "Internet unavailable";
+}
 %}
 <div class="dialog pollywan-dialog">
     {{_R("dialog-header", "PollyWAN selection policy")}}
@@ -133,6 +189,10 @@ const candidates = status && status.candidates || [];
             <div class="cols"><div><div class="o">AREDN LAN to Mesh WAN</div><div class="m">Allows LAN clients to use a remote default already learned into table 22</div></div><div style="flex:0"><input type="checkbox" name="lan_to_remote_wan" {{uciMesh.get("aredn", "@wan[0]", "lan_to_remote_wan") === "1" ? "checked" : ""}}></div></div>
             <hr>
             <div class="cols"><div><div class="o">Health interval / failures</div><div class="m">Gateway reachable is diagnostic only; upstream HTTPS decides Internet reachability before local demotion hysteresis</div></div><div style="flex:0;white-space:nowrap"><input name="health_interval" type="number" min="10" max="3600" size="5" value="{{uciMesh.get("aredn", "multiwan", "health_interval") || 30}}"> s / <input name="failure_count" type="number" min="1" max="10" size="3" value="{{uciMesh.get("aredn", "multiwan", "failure_count") || 2}}"></div></div>
+            <div class="cols"><div><div class="o">Primary probe endpoint</div><div class="m">HTTPS endpoint tested through the candidate source address</div></div><div class="pw-field"><input name="health_url" type="url" pattern="https://.*" value="{{uciMesh.get("aredn", "multiwan", "health_url") || "https://connectivitycheck.gstatic.com/generate_204"}}"></div></div>
+            <div class="cols"><div><div class="o">Primary expected response codes</div><div class="m">Comma-separated HTTP status codes</div></div><div class="pw-field"><input name="health_expected_codes" type="text" value="{{uciMesh.get("aredn", "multiwan", "health_expected_codes") || "204"}}"></div></div>
+            <div class="cols"><div><div class="o">Secondary probe endpoint</div><div class="m">Optional HTTPS endpoint tried only after the primary probe fails</div></div><div class="pw-field"><input name="health_url_secondary" type="url" pattern="|https://.*" value="{{uciMesh.get("aredn", "multiwan", "health_url_secondary") || ""}}"></div></div>
+            <div class="cols"><div><div class="o">Secondary expected response codes</div><div class="m">Comma-separated HTTP status codes for the optional secondary probe</div></div><div class="pw-field"><input name="health_secondary_expected_codes" type="text" value="{{uciMesh.get("aredn", "multiwan", "health_secondary_expected_codes") || "200,204"}}"></div></div>
             <div class="cols"><div><div class="o">Promotion observations / hold-down</div><div class="m">Consecutive better observations and seconds before another promotion</div></div><div style="flex:0;white-space:nowrap"><input name="promote_count" type="number" min="1" max="10" size="3" value="{{uciMesh.get("aredn", "multiwan", "promote_count") || 2}}"> / <input name="hold_down" type="number" min="0" max="3600" size="5" value="{{uciMesh.get("aredn", "multiwan", "hold_down") || 120}}"> s</div></div>
             <div class="cols"><div><div class="o">Mesh export recovery / hold-down</div><div class="m">Table 28 is withdrawn on the first failed upstream probe and recovered exits are not re-advertised immediately</div></div><div style="flex:0;white-space:nowrap"><input name="mesh_export_recover_count" type="number" min="1" max="10" size="3" value="{{uciMesh.get("aredn", "multiwan", "mesh_export_recover_count") || 3}}"> / <input name="mesh_export_hold_down" type="number" min="0" max="3600" size="5" value="{{uciMesh.get("aredn", "multiwan", "mesh_export_hold_down") || 60}}"> s</div></div>
             <div class="cols"><div><div class="o">Result lifetime / automatic testing</div><div class="m">Seconds before a class expires and minimum interval for optional scheduled tests</div></div><div style="flex:0;white-space:nowrap"><input name="result_ttl" type="number" min="900" max="86400" size="7" value="{{uciMesh.get("aredn", "multiwan", "speed_result_ttl") || 21600}}"> / <input name="speed_test_interval" type="number" min="900" max="86400" size="7" value="{{uciMesh.get("aredn", "multiwan", "speed_test_interval") || 21600}}"></div></div>
@@ -140,8 +200,8 @@ const candidates = status && status.candidates || [];
             <div class="cols"><div><div class="o">Return to preferred</div><div class="m">Manual mode normally stays on a healthy fallback until the operator chooses again.</div></div><div style="flex:0"><input type="checkbox" name="return_to_preferred" {{uciMesh.get("aredn", "multiwan", "return_to_preferred") === "1" ? "checked" : ""}}></div></div>
             </details>
         </form>
-        {{_H("Health and throughput are separate. Gateway reachable does not mean Internet reachable. Mesh export is withdrawn immediately when the external upstream probe fails; local failover uses separate hysteresis. Throughput classes only rank healthy WANs and do not override tunnel guards, table 22, tables 26/27/28, or private tables 101/102/103.")}}
-        {% if (length(candidates)) { %}<hr><div class="cols">{% for (let i = 0; i < length(candidates); i++) { const c = candidates[i]; %}<div><div class="t">{{c.name}}: {{c.bin}} {{c.mbps ? sprintf("%.1f Mbps", c.mbps) : ""}}</div><div class="s">Gateway {{c.gateway || "unknown"}} &middot; Gateway reachable {{c.gateway_reachable ? "yes" : "no"}} &middot; Upstream reachable {{c.upstream_reachable ? "yes" : "no"}} &middot; Selection healthy {{c.selection_healthy ? "yes" : "no"}} &middot; Mesh export eligible {{c.export_eligible ? "yes" : "no"}} &middot; Mesh export active {{status && status.mesh_exported ? "yes" : "no"}} &middot; Probe reason {{c.probe_reason || c.reason}} &middot; Next probe {{c.next_probe_epoch || 0}}</div></div>{% } %}</div>{% } %}
+        {{_H("A reachable gateway does not prove that the Internet is reachable. PollyWAN requires a source-bound external HTTPS response before treating a candidate as upstream-reachable. A failed external probe removes the mesh-exported default immediately, while local selection may temporarily remain during its configured failure hysteresis. A recovered connection must pass multiple observations and the export hold-down before PollyWAN publishes it to the mesh again. The optional secondary probe is attempted only after the primary probe fails. The endpoint is tested through the candidate source address and is not satisfied through another WAN. Throughput classes only rank healthy WANs and do not override tunnel guards, table 22, tables 26/27/28, or private tables 101/102/103.")}}
+        {% if (length(candidates)) { %}<hr><div class="cols">{% for (let i = 0; i < length(candidates); i++) { const c = candidates[i]; %}<div><div class="t">{{c.name}}: {{c.bin || c.speed_class}} {{c.mbps ? sprintf("%.1f Mbps", c.mbps) : ""}}</div><div class="s">{{reachabilityState(c)}} &middot; {{meshExportState(c)}}</div><div class="s">Gateway {{c.gateway || "unknown"}} &middot; Gateway reachable {{c.gateway_reachable ? "yes" : "no"}} &middot; Upstream reachable {{c.upstream_reachable ? "yes" : "no"}} &middot; Selection healthy {{c.selection_healthy ? "yes" : "no"}} &middot; Mesh export eligible {{c.export_eligible ? "yes" : "no"}} &middot; Mesh export active {{status && status.mesh_exported ? "yes" : "no"}} &middot; Probe endpoint {{c.probe_endpoint || status && status.probe_endpoint || "none"}} &middot; Probe reason {{c.probe_reason || c.reason}} &middot; Next probe time {{c.next_probe_epoch || 0}}</div></div>{% } %}</div>{% } %}
         <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-include="#wan-policy-form" hx-vals='{"action":"save"}'>Save policy</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-vals='{"action":"evaluate"}'>Evaluate now</button><div class="pw-spacer"></div><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-vals='{"action":"mesh-fallback"}'>Use remote Mesh WAN</button></div>
     </div>
     {{_R("dialog-footer", "nocancel")}}
