@@ -1,4 +1,4 @@
-# PollyWAN r28 build and verification
+# PollyWAN r29 build and verification
 
 ## 1. Static source verification
 
@@ -25,8 +25,8 @@ make MAINTARGET=ath79 SUBTARGET=mikrotik prepare
 
 grep '^CONFIG_PACKAGE_aredn-multiwan=m$' openwrt/.config
 make -C openwrt package/aredn-multiwan/clean V=sc -j1
-make -C openwrt package/aredn-multiwan/compile V=sc -j1 2>&1 | tee /tmp/pollywan-r28-build.log
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r28.apk' -print -exec sha256sum {} \;
+make -C openwrt package/aredn-multiwan/compile V=sc -j1 2>&1 | tee /tmp/pollywan-r29-build.log
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r29.apk' -print -exec sha256sum {} \;
 ```
 
 If matching kernel-module APKs are unavailable, build the full exact target. Never mix architecture, firmware, or kernel ABI.
@@ -55,7 +55,7 @@ ip -4 route show table main > /tmp/pollywan-before/main
 Install without enabling:
 
 ```sh
-apk add --allow-untrusted /tmp/aredn-multiwan-0.1.0-r28.apk
+apk add --allow-untrusted /tmp/aredn-multiwan-0.1.0-r29.apk
 [ "$(uci -c /etc/config.mesh get aredn.multiwan.enabled)" = 0 ]
 [ "$(uci -c /etc/config.mesh get aredn.multiwan.port_roles_enabled)" = 0 ]
 [ "$(uci -c /etc/config.mesh get aredn.multiwan.wan3_enable)" = 0 ]
@@ -87,6 +87,12 @@ Prove:
 - both radios in WAN mode are rejected
 - an Ethernet WAN-1 port is rejected while Wi-Fi owns `wan`
 - the generated bridge/switch configuration omits Ethernet VLAN 4 and `wan.network.user` while Wi-Fi owns `wan`
+- mesh AP/PTP/station radios remain on AREDN's `br-wifi`/RF VLAN path and are not local WAN candidates
+- `br-fast` is not written by PollyWAN and is not treated as a WAN
+- firewall zone `wifi` still contains logical networks `mesh`, `fast`, `wifi`, `wifi0`, and `wifi1`
+- firewall zone `wan` contains `wan`, plus `wan2` when enabled; WAN 3 is a dynamic `wan3` interface with `zone wan`
+- PollyWAN never adds `wifi` or `fast` to the WAN firewall zone
+- a configured RF VLAN of 2, 3, 4, or 5 is rejected before PollyWAN writes role include files
 - WAN 2 remains available on Ethernet
 - PollyWAN never changes either radio mode
 - switching AREDN radio ownership after roles were applied produces an attention state rather than a silent port remap
@@ -139,6 +145,23 @@ Save an administrator-selected HTTPS range object. Reject HTTP, credentials, fra
 ```
 
 Confirm route proof, bounded payloads, global lock, source/gateway binding, Cloudflare colo parsing, iperf3 node-name validation, and low/medium/fast thresholds. Changing Wi-Fi DHCP address or gateway must make the `wan` result stale.
+
+## 7a. PR #2817 remote forwarding gate
+
+With Mesh to WAN enabled and a selected healthy local WAN, verify a remote mesh node connected through RF can actually forward Internet traffic through `br-wifi`, not merely learn a Babel default:
+
+```sh
+# local gateway node
+uci -q show firewall | grep -E "zone.*name='(wifi|wan)'|network"
+ip -4 route show table 28
+/usr/local/bin/wan3-manager status
+
+# remote RF node
+ip -4 route get 1.1.1.1
+curl --max-time 10 --proxy '' https://connectivitycheck.gstatic.com/generate_204 -o /dev/null -w '%{http_code}\n'
+```
+
+Force an upstream-health failure or run `wan3-manager withdraw 'test' 1` on the gateway and confirm the remote curl fails immediately after table 28 is withdrawn. Restore a healthy selected local WAN, wait for `mesh_export_recover_count` and `mesh_export_hold_down`, then confirm the remote curl succeeds again.
 
 ## 8. Adaptive rotation
 
@@ -207,4 +230,4 @@ apk del aredn-multiwan
 
 Verify previous AREDN include files and roles are restored, normal Ethernet or Wi-Fi WAN 1 returns, WAN 3/package tables/rules/guards/UI are removed, and GPS/radio state remains unchanged.
 
-Collect Git SHAs, subtree sync result, APK/dependency checksums, build logs, exact ABI, before/after GPS/radio snapshots, role/rollback evidence, route/rule dumps, calibration/SLA JSON, Babel/tunnel/Android USB tests, and uninstall results. Do not mark r28 ready until package build and physical target gates pass.
+Collect Git SHAs, subtree sync result, APK/dependency checksums, build logs, exact ABI, before/after GPS/radio snapshots, role/rollback evidence, route/rule dumps, calibration/SLA JSON, Babel/tunnel/Android USB tests, and uninstall results. Do not mark r29 ready until package build and physical target gates pass.

@@ -7,6 +7,7 @@
 - [Build, static, installation, GPS, route, Babel, and rollback verification](multiwan-verification.md)
 - [Future AREDN sysinfo integration plan](aredn-sysinfo-integration-plan.md)
 - [OpenClaw prompt for mse-88 → hub5](../tools/openclaw-build-test-prompt.md)
+- [r29 development and compatibility plan](r29-development-plan.md)
 
 All user-visible defaults, paths, table numbers, limits, and limitations are checked by `tests/verify.sh`.
 

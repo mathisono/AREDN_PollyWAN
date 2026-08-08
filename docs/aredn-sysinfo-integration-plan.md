@@ -1,6 +1,6 @@
 # Future AREDN sysinfo integration plan
 
-PollyWAN r28 does not modify AREDN core sysinfo files and does not replace
+PollyWAN r29 does not modify AREDN core sysinfo files and does not replace
 `/app/main/sysinfo.ut`, `/www/cgi-bin/sysinfo.json`, or `/a/sysinfo`.
 
 The standalone package owns this public cache-only endpoint instead:
@@ -25,7 +25,7 @@ catch (_) {
 }
 ```
 
-That is not implemented by the standalone r28 APK. It requires AREDN-core
+That is not implemented by the standalone r29 APK. It requires AREDN-core
 review and merge.
 
 ## Generic extension directory
