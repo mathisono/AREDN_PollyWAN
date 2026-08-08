@@ -59,6 +59,7 @@ const wan2Enabled = uciMesh.get("aredn", "multiwan", "wan2_enable") === "1";
         <div class="pw-label">Table</div><div class="pw-value">102 private</div>
     </div>
 </section>
+{{_R("usb-wan")}}
 <section id="mesh-card" class="pw-card pw-card-main {{active === "mesh" ? "pw-status-active" : s && s.remote_mesh_default ? "pw-status-ok" : "pw-status-off"}}" aria-labelledby="pw-mesh-title">
     <div class="pw-card-head"><h2 id="pw-mesh-title">Remote Mesh WAN</h2><span class="pw-badge"><span class="pw-status-dot"></span>{{active === "mesh" ? "Active" : s && s.remote_mesh_default ? "Available" : "Absent"}}</span></div>
     <div class="pw-muted">Babel table 22 fallback</div>

@@ -7,15 +7,12 @@ const device = iface && (iface.l3_device || iface.device) || "";
 const routes = iface && iface.route || [];
 let gateway = "";
 for (let i = 0; i < length(routes); i++) if (routes[i].target === "0.0.0.0") { gateway = routes[i].nexthop || ""; break; }
-const stateText = !enabled ? "Disabled" : !device ? "Waiting for phone" : !length(addresses) ? "Requesting DHCP" : "Connected";
+const stateText = !enabled ? "Disabled" : !device ? "No USB network device detected" : !length(addresses) ? "Waiting for DHCP" : "Upstream reachable";
 const stateClass = enabled ? length(addresses) ? "pw-status-ok" : "pw-status-warn" : "pw-status-off";
 %}
 <section id="usb-wan" class="ctrl pw-card pw-card-main pw-card-clickable {{stateClass}}" hx-get="status/e/usb-wan" hx-target="#ctrl-modal" hx-swap="innerHTML" tabindex="0" aria-labelledby="pw-wan3-title">
     <div class="pw-card-head"><h2 id="pw-wan3-title">Android USB tether</h2><span class="pw-configure">Configure</span></div>
     <div class="pw-badge"><span class="pw-status-dot"></span>{{stateText}}</div>
-    {% if (!enabled) { %}
-    <p class="pw-muted">WAN 3 is disabled. USB networking and route publication are idle.</p>
-    {% } %}
     <div class="pw-wan3-grid">
         <div class="pw-tile"><strong>Kernel support</strong><div>{{enabled ? "Existing modules only" : "Idle"}}</div></div>
         <div class="pw-tile"><strong>USB netdev</strong><div>{{device || "Absent"}}</div></div>

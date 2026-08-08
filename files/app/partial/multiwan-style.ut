@@ -18,6 +18,51 @@
   max-width: 1180px;
   padding: .5rem;
 }
+#multiwan-page .pw-state-strip {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .4rem;
+  margin-top: .75rem;
+}
+#multiwan-page .pw-state-item {
+  align-items: center;
+  border: 1px solid var(--pw-border);
+  border-radius: 999px;
+  color: var(--pw-muted);
+  display: inline-flex;
+  font-size: .76rem;
+  gap: .35rem;
+  line-height: 1.2;
+  min-height: 1.55rem;
+  padding: .22rem .5rem;
+}
+#multiwan-page .pw-state-item .pw-status-dot {
+  background: transparent;
+  border: 1px solid var(--pw-border);
+  height: .55rem;
+  width: .55rem;
+}
+#multiwan-page .pw-state-inactive {
+  border-color: var(--pw-border);
+  color: var(--pw-muted);
+}
+#multiwan-page .pw-state-inactive .pw-status-dot {
+  background: transparent;
+  border-color: var(--pw-border);
+}
+#multiwan-page .pw-state-current {
+  color: var(--pw-text);
+  font-weight: 600;
+}
+#multiwan-page .pw-state-current.pw-state-ok { border-color: var(--pw-ok); }
+#multiwan-page .pw-state-current.pw-state-ok .pw-status-dot { background: var(--pw-ok); border-color: var(--pw-ok); }
+#multiwan-page .pw-state-current.pw-state-warn { border-color: var(--pw-warn); }
+#multiwan-page .pw-state-current.pw-state-warn .pw-status-dot { background: var(--pw-warn); border-color: var(--pw-warn); }
+#multiwan-page .pw-state-current.pw-state-bad { border-color: var(--pw-bad); }
+#multiwan-page .pw-state-current.pw-state-bad .pw-status-dot { background: var(--pw-bad); border-color: var(--pw-bad); }
+#multiwan-page .pw-state-current.pw-state-info { border-color: var(--pw-active); }
+#multiwan-page .pw-state-current.pw-state-info .pw-status-dot { background: var(--pw-active); border-color: var(--pw-active); }
 #multiwan-page *, #multiwan-page *::before, #multiwan-page *::after,
 .pollywan-dialog *, .pollywan-dialog *::before, .pollywan-dialog *::after {
   box-sizing: border-box;
@@ -182,6 +227,28 @@
 .pollywan-dialog {
   max-width: min(760px, calc(100vw - 1rem));
 }
+.pollywan-dialog.pollywan-ports-page {
+  max-width: 1440px !important;
+  min-width: 0 !important;
+  width: 96vw !important;
+}
+.pollywan-dialog .pollywan-ports-table-wrap,
+.pollywan-dialog .pollywan-xlinks-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.pollywan-dialog.pollywan-ports-page .ports table {
+  min-width: 760px;
+}
+.pollywan-dialog.pollywan-scroll-dialog {
+  max-height: calc(100vh - 2rem);
+  min-height: 0;
+  overflow-y: auto;
+}
+.pollywan-dialog.pollywan-scroll-dialog #link-calibration-dialog {
+  min-height: 0;
+}
 .pollywan-dialog .pw-notice {
   border: 1px solid var(--pw-border);
   border-radius: 7px;
@@ -291,5 +358,9 @@
   .pollywan-dialog button { min-height: 2.5rem; }
   .pollywan-dialog select,
   .pollywan-dialog input:not([type="checkbox"]) { width: 100%; }
+  .pollywan-dialog.pollywan-ports-page {
+    max-width: calc(100vw - 1rem) !important;
+    width: calc(100vw - 1rem) !important;
+  }
 }
 </style>
