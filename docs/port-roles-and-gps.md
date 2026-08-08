@@ -70,6 +70,8 @@ USB:         WAN 3
 
 Internal VLANs are 3 (LAN), 2 (DtD), 4 (Ethernet WAN 1), and 5 (WAN 2). VLAN 4 and the package `wan.network.user` override are omitted while AREDN Wi-Fi client mode owns WAN 1. AREDN then generates `network.interface.wan` directly on `wlan0` or `wlan1`.
 
+AREDN PR #2816 uses `br-wifi` for mesh AP/PTP/station radios and keeps that shared RF bridge in AREDN's generated `wifi_network_config`, outside PollyWAN's `bridge.network.user` fragment. PR #2817 assigns logical networks `wifi` and `fast` to the AREDN `wifi` firewall zone. PollyWAN must not write or classify `br-wifi` as WAN, must not modify `br-fast`, and must not move `wifi` or `fast` into the WAN firewall zone. On builds with configurable RF VLAN support, the configured RF VLAN must not be 2, 3, 4, or 5 because those VLANs are reserved by PollyWAN's Ethernet role layout.
+
 ## Apply and rollback
 
 Saving records UCI choices only. **Apply with rollback**:

@@ -23,11 +23,22 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current package release is `0.1.0-r28`.
+The current package release is `0.1.0-r29`.
 
 ## Release files
 
-Download release files from:
+- `wan` — WAN 1. When an AREDN radio is in client/WAN mode, the existing logical interface `wan` uses `wlan0` or `wlan1`. Otherwise WAN 1 uses administrator-selected hAP Ethernet port(s).
+- `wan2` — WAN 2 on administrator-selected Ethernet port(s).
+- `wan3` — Android USB tether using RNDIS, CDC Ethernet, or CDC NCM when existing kernel USB-network support is available.
+- Remote Mesh WAN remains the Babel-learned default in table 22 and is never treated as a fourth local candidate.
+
+Wi-Fi WAN and Ethernet WAN 1 are mutually exclusive because AREDN gives both the same logical interface name, `wan`. PollyWAN never changes a radio mode; it observes AREDN's existing configuration and prevents an Ethernet WAN-1 assignment while Wi-Fi owns `wan`.
+
+Mesh AP/PTP/station radios are not WAN candidates. On AREDN builds with the shared RF bridge, they remain on AREDN's `br-wifi` path and AREDN's `wifi` firewall zone. PollyWAN never moves logical networks `wifi` or `fast` into the WAN zone, and any configured RF VLAN must avoid PollyWAN's Ethernet VLANs 2, 3, 4, and 5.
+
+## Install From a GitHub Release
+
+Download the APK for the matching PollyWAN release from:
 
 ```text
 https://github.com/mathisono/AREDN_PollyWAN/releases/tag/v0.1.0-r27
@@ -59,7 +70,7 @@ Verify downloaded release files with `SHA256SUMS-release.txt`.
 
 ### Recommended: AREDN web interface
 
-1. Download `aredn-multiwan-0.1.0-r28.apk` to your computer.
+1. Download `aredn-multiwan-0.1.0-r29.apk` to your computer.
 2. Log in to the AREDN node as an administrator.
 3. Open **Packages**.
 4. Under **Upload Package**, choose the PollyWAN APK.
@@ -71,7 +82,7 @@ Verify downloaded release files with `SHA256SUMS-release.txt`.
 http://NODE/a/multiwan
 ```
 
-Release r28 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
+Release r29 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
 
 AREDN already supplies `iperf3`, so a separate iperf package is not normally required. Release r27 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`; these were already present on the tested AREDN 4.26.7.0 hAP ac2 image.
 
@@ -91,7 +102,7 @@ Do not run `node-setup`, reload networking, or apply port roles merely to finish
 ssh root@NODE
 cd /tmp
 
-VERSION='0.1.0-r28'
+VERSION='0.1.0-r29'
 TAG="v${VERSION}"
 APK="aredn-multiwan-${VERSION}.apk"
 
@@ -348,7 +359,7 @@ Package-owned public telemetry is available at:
 http://NODE/cgi-bin/apps/aredn-multiwan/status.json
 ```
 
-It returns schema version 1 from `/tmp/wan-sla/telemetry.json`, uses JSON `null` for unavailable scalar values, and does not run probes or modify routes. Integration into `/cgi-bin/sysinfo.json` is deferred until AREDN core accepts a reviewed hook; r28 does not replace AREDN core sysinfo files.
+It returns schema version 1 from `/tmp/wan-sla/telemetry.json`, uses JSON `null` for unavailable scalar values, and does not run probes or modify routes. Integration into `/cgi-bin/sysinfo.json` is deferred until AREDN core accepts a reviewed hook; r29 does not replace AREDN core sysinfo files.
 
 Run bounded speed tests from SSH:
 
@@ -404,7 +415,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r28.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r29.apk' -print -exec sha256sum {} \;
 ```
 
 Static verification is not a substitute for exact kernel-ABI checks, disabled-install testing, port rollback testing, or physical hardware validation.

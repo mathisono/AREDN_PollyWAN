@@ -23,6 +23,7 @@ mkdir -p "$STATE_DIR" "$INCLUDE_DIR" || exit 1
 
 log() { logger -t aredn-multiwan-ports "$*"; }
 uci_get() { uci -c /etc/config.mesh -q get "$CONFIG_PACKAGE.$CONFIG_SECTION.$1" 2>/dev/null || true; }
+setup_get() { uci -c /etc/config.mesh -q get "setup.globals.$1" 2>/dev/null || true; }
 json_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\t/\\t/g; s/\r/\\r/g; s/\n/\\n/g'; }
 valid_uint() { case "$1" in ''|*[!0-9]*) return 1 ;; *) return 0 ;; esac; }
 valid_role() { case "$1" in lan|wan|wan2|off) return 0 ;; *) return 1 ;; esac; }
@@ -127,9 +128,23 @@ count_role()
     printf '%s\n' "$count"
 }
 
+validate_rf_vlan()
+{
+    vlan="$(setup_get radio_vlan)"
+    [ -n "$vlan" ] || return 0
+    valid_uint "$vlan" || return 0
+    case "$vlan" in
+        2|3|4|5)
+            echo "configured RF VLAN $vlan conflicts with PollyWAN Ethernet VLANs 2/3/4/5" >&2
+            return 1
+            ;;
+    esac
+}
+
 validate_roles()
 {
     board_kind >/dev/null 2>&1 || { echo 'unsupported board' >&2; return 1; }
+    validate_rf_vlan || return 1
     [ "$(count_role lan)" -gt 0 ] || { echo 'at least one Ethernet port must remain LAN' >&2; return 1; }
 
     wifi_device="$(wifi_wan_device 2>/dev/null)"

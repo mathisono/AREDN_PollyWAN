@@ -115,8 +115,11 @@ aredn.multiwan.port4_dtd=0
 aredn.multiwan.port5_dtd=1
 setup.globals.radio0_mode=off
 setup.globals.radio1_mode=off
+setup.globals.radio_vlan=3707
 firewall.@zone[0].name=wan
 firewall.@zone[0].network=wan
+firewall.@zone[1].name=wifi
+firewall.@zone[1].network=mesh fast wifi wifi0 wifi1
 DB
 }
 
@@ -165,6 +168,10 @@ run_ethernet_case()
     grep -F "option ip4table '102'" "$bridge" >/dev/null
     grep -F "list ports 'br0.5'" "$bridge" >/dev/null
     grep -F "option vlan '2'" "$bridge" >/dev/null
+    grep -F "option vlan '3'" "$bridge" >/dev/null
+    ! grep -F "option vlan '3707'" "$bridge" >/dev/null
+    ! grep -F "br-wifi" "$bridge" >/dev/null
+    ! grep -F "br-fast" "$bridge" >/dev/null
     test -f "$root/etc/aredn_include/wan.network.user"
     grep -F "option ip4table '101'" "$root/etc/aredn_include/wan.network.user" >/dev/null
     grep -F 'wan_transport=ethernet:br-wan' "$root/etc/aredn_include/.aredn-multiwan-ports" >/dev/null
@@ -182,6 +189,8 @@ run_ethernet_case()
         grep -F "option ports '0t 4'" "$root/etc/aredn_include/swconfig" >/dev/null
         grep -F "option ports '0t 1t'" "$root/etc/aredn_include/swconfig" >/dev/null
     fi
+    [ "$(chroot "$root" /sbin/uci get firewall.@zone[0].network)" = 'wan wan2' ]
+    [ "$(chroot "$root" /sbin/uci get firewall.@zone[1].network)" = 'mesh fast wifi wifi0 wifi1' ]
 
     assert_gps_unchanged "$root"
 
@@ -231,6 +240,11 @@ run_wifi_case()
     ! grep -F "option vlan '4'" "$bridge" >/dev/null
     grep -F "option vlan '5'" "$bridge" >/dev/null
     grep -F "option ip4table '102'" "$bridge" >/dev/null
+    grep -F "option vlan '2'" "$bridge" >/dev/null
+    grep -F "option vlan '3'" "$bridge" >/dev/null
+    ! grep -F "option vlan '3707'" "$bridge" >/dev/null
+    ! grep -F "br-wifi" "$bridge" >/dev/null
+    ! grep -F "br-fast" "$bridge" >/dev/null
     [ ! -e "$root/etc/aredn_include/wan.network.user" ]
     grep -F "wan_transport=wifi:$expected" "$root/etc/aredn_include/.aredn-multiwan-ports" >/dev/null
 
@@ -238,6 +252,8 @@ run_wifi_case()
         ! grep -F "option vlan '4'" "$root/etc/aredn_include/swconfig" >/dev/null
         grep -F "option vlan '5'" "$root/etc/aredn_include/swconfig" >/dev/null
     fi
+    [ "$(chroot "$root" /sbin/uci get firewall.@zone[0].network)" = 'wan wan2' ]
+    [ "$(chroot "$root" /sbin/uci get firewall.@zone[1].network)" = 'mesh fast wifi wifi0 wifi1' ]
 
     assert_gps_unchanged "$root"
     POLLYWAN_TEST_MODE=1 chroot "$root" /usr/local/bin/wan-port-manager confirm "$token"
@@ -276,6 +292,32 @@ run_conflict_cases()
     echo 'mock Wi-Fi WAN conflict rejection passed'
 }
 
+run_rf_vlan_cases()
+{
+    root="$TMP/rf-vlan"
+    setup_root "$root"; write_base_db "$root"; add_devices "$root" dsa
+    printf '%s\n' mikrotik,hap-ac2 > "$root/tmp/sysinfo/board_name"
+
+    for mode in mesh meshap meshptp meshsta; do
+        set_db "$root" setup.globals.radio0_mode "$mode"
+        [ "$(POLLYWAN_TEST_MODE=1 chroot "$root" /usr/local/bin/wan-port-manager wan-transport)" = 'ethernet:br-wan' ]
+        POLLYWAN_TEST_MODE=1 chroot "$root" /usr/local/bin/wan-port-manager validate
+    done
+
+    for vlan in 2 3 4 5; do
+        set_db "$root" setup.globals.radio_vlan "$vlan"
+        if POLLYWAN_TEST_MODE=1 chroot "$root" /usr/local/bin/wan-port-manager validate >"$root/tmp/rf-vlan-$vlan.out" 2>&1; then
+            echo "RF VLAN $vlan collision was accepted" >&2
+            exit 1
+        fi
+        grep -F "configured RF VLAN $vlan conflicts with PollyWAN Ethernet VLANs 2/3/4/5" "$root/tmp/rf-vlan-$vlan.out" >/dev/null
+    done
+    set_db "$root" setup.globals.radio_vlan 3707
+    POLLYWAN_TEST_MODE=1 chroot "$root" /usr/local/bin/wan-port-manager validate
+    echo 'mock RF VLAN compatibility passed'
+}
+
 run_ethernet_case mikrotik,hap-ac2 dsa
 run_wifi_case mikrotik,routerboard-952ui-5ac2nd swconfig 1
 run_conflict_cases
+run_rf_vlan_cases
