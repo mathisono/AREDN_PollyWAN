@@ -41,13 +41,13 @@ Mesh AP/PTP/station radios are not WAN candidates. On AREDN builds with the shar
 Download the APK for the matching PollyWAN release from:
 
 ```text
-https://github.com/mathisono/AREDN_PollyWAN/releases/tag/v0.1.0-r27
+https://github.com/mathisono/AREDN_PollyWAN/releases/tag/v0.1.0-r29
 ```
 
 ### Core PollyWAN APK
 
 ```text
-aredn-multiwan-0.1.0-r27.apk
+aredn-multiwan-0.1.0-r29.apk
 SHA-256: 8c4893d48e0b9af3d4bef0a14d5c0ed28f6ebe98677d29e7a527f8194e705e23
 ```
 
@@ -84,9 +84,7 @@ http://NODE/a/multiwan
 
 Release r29 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
 
-AREDN already supplies `iperf3`, so a separate iperf package is not normally required. Release r27 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`; these were already present on the tested AREDN 4.26.7.0 hAP ac2 image.
-
-PollyWAN r27 no longer depends on `redsocks`, `libevent2-core7`, `ip-tiny`, `nftables-json`, or `kmod-nft-nat`.
+PollyWAN remains disabled after installation. Installing the APK alone does not reload networking or apply Ethernet port roles.
 
 If the page does not appear after refreshing, restart only the web interface from SSH:
 
@@ -107,16 +105,16 @@ TAG="v${VERSION}"
 APK="aredn-multiwan-${VERSION}.apk"
 
 curl -fL --retry 3 \
-  -o aredn-multiwan-0.1.0-r27.apk \
-  https://github.com/mathisono/AREDN_PollyWAN/releases/download/v0.1.0-r27/aredn-multiwan-0.1.0-r27.apk
+  -o "$APK" \
+  "https://github.com/mathisono/AREDN_PollyWAN/releases/download/${TAG}/${APK}"
 
-sha256sum aredn-multiwan-0.1.0-r27.apk
+sha256sum "$APK"
 
 apk add --simulate --no-network --allow-untrusted \
-  ./aredn-multiwan-0.1.0-r27.apk
+  "$APK"
 
 apk add --no-network --allow-untrusted \
-  ./aredn-multiwan-0.1.0-r27.apk
+  "$APK"
 
 /etc/init.d/uhttpd restart
 ```
