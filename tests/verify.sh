@@ -85,8 +85,8 @@ done
 
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
-require_text Makefile 'PKG_VERSION:=0.1.0'
-require_text Makefile 'PKG_RELEASE:=295'
+require_text Makefile 'PKG_VERSION:=0.1.0-r29.5'
+require_text Makefile 'PKG_RELEASE:=1'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -102,6 +102,8 @@ require_text Makefile 'WAN 1 as either administrator-selected hAP Ethernet or th
 require_text Makefile 'existing AREDN Wi-Fi client logical interface'
 require_text Makefile 'Installation is disabled and inert'
 require_text Makefile 'Package/aredn-multiwan/prerm'
+require_text Makefile 'if [ "$${PKG_UPGRADE:-0}" = 1 ]'
+require_text Makefile '/etc/init.d/wan3-manager restart'
 require_text Makefile 'files/app/partial/multiwan-style.ut'
 require_text Makefile 'files/app/partial/multiwan.ut'
 require_text Makefile 'files/usr/local/bin/wan-speed-test'

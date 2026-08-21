@@ -53,8 +53,8 @@ Do not silently change the audit baseline during an r29 test cycle.
 3. On stable `4.26.7.0`, retain the r28 route contract and all r28 GUI,
    telemetry, damping, XLink, and Cancel behavior.
 4. Keep the preserved stable release at `0.1.0-r29`; corrective work uses APK
-   revision `0.1.0-r295` for product release R29.5 while it is reviewed, built,
-   and validated on stable firmware.
+   version `0.1.0-r29.5-r1` for product release R29.5 while it is reviewed,
+   built, and validated on stable firmware.
 5. Run standalone verification, integration synchronization/check, and
    integration verification. Record root-only verification as pending unless it
    actually succeeds.
@@ -79,8 +79,7 @@ are not part of the published R29 APK.
 - the initialization commit-order bug is fixed and required defaults are
   verified after the persistent commit;
 - runtime telemetry and the dashboard identify product release `R29.5`; the APK
-  uses integer package revision `0.1.0-r295` because dotted APK revisions are
-  invalid;
+  uses product version `0.1.0-r29.5` plus integer APK package revision `r1`;
 - standalone verification, stable-tree synchronization/build, and independent
   live validation on both hAP ac2 nodes remain release gates.
 

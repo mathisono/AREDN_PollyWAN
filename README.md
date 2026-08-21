@@ -23,10 +23,10 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current R29.5 test package uses APK version `0.1.0-r295`; APK package
-revisions are integers, so `r295` is the installable encoding of product release
-R29.5. The latest published GitHub release remains `0.1.0-r29` until R29.5
-validation is complete.
+The current R29.5 test package uses APK version `0.1.0-r29.5-r1`. The product
+release is encoded in `PKG_VERSION`, while APK's required integer package
+revision is `r1`. The latest published GitHub release remains `0.1.0-r29` until
+R29.5 validation is complete.
 
 ## Release files
 
@@ -419,7 +419,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r295.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r29.5-r1.apk' -print -exec sha256sum {} \;
 ```
 
 Static verification is not a substitute for exact kernel-ABI checks, disabled-install testing, port rollback testing, or physical hardware validation.

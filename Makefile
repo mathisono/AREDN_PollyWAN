@@ -1,8 +1,8 @@
 include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aredn-multiwan
-PKG_VERSION:=0.1.0
-PKG_RELEASE:=295
+PKG_VERSION:=0.1.0-r29.5
+PKG_RELEASE:=1
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=AREDN contributors
 PKGARCH:=all
@@ -48,8 +48,14 @@ if [ -x /etc/uci-defaults/95-aredn-multiwan ]; then
   /etc/uci-defaults/95-aredn-multiwan && rm -f /etc/uci-defaults/95-aredn-multiwan
 fi
 /etc/init.d/wan3-manager enable >/dev/null 2>&1 || true
-# start_service is intentionally inert while aredn.multiwan.enabled=0
-/etc/init.d/wan3-manager start >/dev/null 2>&1 || true
+# An APK upgrade does not replace an already-running procd instance. Restart it
+# so the new daemon and migrated ordered-policy configuration take effect.
+if [ "$${PKG_UPGRADE:-0}" = 1 ]; then
+  /etc/init.d/wan3-manager restart >/dev/null 2>&1 || true
+else
+  # start_service is intentionally inert while aredn.multiwan.enabled=0
+  /etc/init.d/wan3-manager start >/dev/null 2>&1 || true
+fi
 exit 0
 endef
 
