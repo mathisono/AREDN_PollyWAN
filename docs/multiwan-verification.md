@@ -163,22 +163,21 @@ curl --max-time 10 --proxy '' https://connectivitycheck.gstatic.com/generate_204
 
 Force an upstream-health failure or run `wan3-manager withdraw 'test' 1` on the gateway and confirm the remote curl fails immediately after table 28 is withdrawn. Restore a healthy selected local WAN, wait for `mesh_export_recover_count` and `mesh_export_hold_down`, then confirm the remote curl succeeds again.
 
-## 8. Adaptive rotation
+## 8. Ordered route failover
 
 Test:
 
-1. different healthy bins
-2. equal bins and preferred-WAN ties
-3. standby probe failure preventing promotion
-4. immediate hard interface demotion
-5. active application failure hysteresis
-6. `promote_count`
-7. `hold_down`
-8. stale calibration
-9. no local candidate meeting `selection_min_bin`
-10. Wi-Fi WAN disconnect/reconnect
-11. explicit table-22 fallback
-12. selected link below `mesh_share_min_bin`
+1. each of WAN 1, WAN 2, USB, and Remote Mesh WAN in every priority slot
+2. disabled routes being skipped without changing the configured order
+3. A → B → C immediate downward failover
+4. C → B → A recovery using `promote_count` and `hold_down`
+5. standby probe failure preventing recovery
+6. active application failure hysteresis
+7. stale or missing speed results at each minimum allowable data-rate setting
+8. no local route meeting `selection_min_bin`
+9. Wi-Fi WAN disconnect/reconnect
+10. enabled and disabled table-22 Remote Mesh WAN
+11. selected local route below `mesh_share_min_bin`
 
 Inspect `/usr/local/bin/wan-sla status`, `/usr/local/bin/wan3-manager status`, and tables after each transition.
 

@@ -69,6 +69,22 @@ Development for these corrective changes continues on `release/r29.5`. The
 explicit Ethernet and Selection Policy apply controls are R29.5 changes; they
 are not part of the published R29 APK.
 
+### Ordered Route Policy Setup
+
+R29.5 replaces the Manual/Automatic and speed-ranked policy with one ordered
+route list. WAN 1, WAN 2, Android USB tether, and Remote Mesh WAN each appear
+exactly once in the preference order and have independent enable switches.
+Failover moves downward immediately after the failure threshold; recovery moves
+upward only after the configured success count and hold-down. Speed is a local
+eligibility floor and never reorders the list.
+
+The operator-facing page is renamed `Route Policy Setup`, has no Advanced
+disclosure, and removes expected HTTP response-code fields, result lifetime,
+automatic test scheduling, manual selection mode, and the return-to-preferred
+toggle. It retains only settings useful to the routing decision: enabled
+routes, route order, clear local and mesh-sharing data-rate floors, health URLs
+and timing, recovery damping, and local-route mesh export.
+
 ### Preserve and verify initialization
 
 Live validation on `KP4DJT-HAP-AC2-VAN` found the R29 APK registered as

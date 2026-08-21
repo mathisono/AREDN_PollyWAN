@@ -13,20 +13,22 @@ Health checks do not download speed-test payloads and do not run iperf3. A faile
 
 ## Selection behavior
 
-Operators choose only **Manual** or **Automatic**.
+R29.5 uses an explicit ordered route policy. Operators rank WAN 1, WAN 2,
+Android USB tether, and Remote Mesh WAN. The first enabled route that passes its
+availability and data-rate policy wins. A failure moves downward immediately;
+recovery moves upward only after the configured confirmation and hold-down.
 
-Manual mode keeps the selected connection while it is healthy. If that connection fails health checks, PollyWAN immediately selects the best healthy fallback. It does not automatically return to the original preferred connection unless the operator chooses it again or explicitly enables the advanced return option.
-
-Automatic mode ranks only healthy WANs. Fresh speed results classify each path:
+Fresh local speed results classify each path:
 
 - Low: less than 5 Mbps
 - Medium: 5 through 30 Mbps
 - Fast: greater than 30 Mbps
 - Unknown: no fresh valid result
 
-The current healthy WAN stays active unless another WAN has a higher class for the required promotion observations. Same-class Mbps differences do not cause flapping. If all classes are Unknown, the preferred healthy connection wins.
-
-Older `availability` and `adaptive` configuration values migrate to `automatic`.
+The class is an eligibility floor only; it never changes the configured order.
+Remote Mesh WAN has no local speed class and is eligible when its table-22
+default is present. Older manual, availability, adaptive, and automatic values
+migrate to `ordered`.
 
 ## AREDN node-to-node testing
 

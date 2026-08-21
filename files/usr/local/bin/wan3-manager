@@ -607,15 +607,8 @@ apply()
     ensure_policy_rules
     /usr/local/bin/wan-tunnel-guard apply >/dev/null 2>&1 || true
 
-    mode="$(uci_get selection_mode)"; [ -n "$mode" ] || mode=manual
-    active="$(uci_get active)"; case "$active" in wan|wan2|wan3) ;; *) active=wan ;; esac
-    if [ "$mode" = manual ]; then
-        # Route immediately for local management, but do not publish table 28
-        # until the SLA evaluator confirms current health and a fresh bin.
-        if ! select_wan "$active" 1 unknown 0; then
-            withdraw_local "Manual selection is unavailable" 1
-        fi
-    fi
+    # The ordered R29.5 policy evaluator owns initial selection and failover.
+    # Do not preselect a local route here because Remote Mesh WAN may be first.
     /usr/local/bin/wan-sla once >/dev/null 2>&1 &
 }
 

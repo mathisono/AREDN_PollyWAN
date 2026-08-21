@@ -1,7 +1,7 @@
 #!/bin/sh
-# PollyWAN local-WAN selector. Reachability is a hard gate; occasional
-# throughput tests provide low/medium/fast classes. Speed never marks an
-# otherwise healthy path down.
+# PollyWAN ordered route selector. Reachability is a hard gate. Optional speed
+# measurements can enforce a minimum data rate for local routes, but never
+# reorder the administrator's explicit route priority.
 
 set -u
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
@@ -85,6 +85,7 @@ candidate_enabled()
         wan) [ "$(uci_get wan_enable)" != 0 ] ;;
         wan2) [ "$(uci_get wan2_enable)" != 0 ] ;;
         wan3) [ "$(uci_get wan3_enable)" = 1 ] ;;
+        mesh) [ "$(uci_get mesh_enable)" = 1 ] ;;
         *) return 1 ;;
     esac
 }
@@ -407,7 +408,7 @@ evaluate_candidate()
         fi
     fi
 
-    if [ "$probe_ok" = 1 ] && [ "$mode" = automatic ]; then maybe_calibrate "$name" "$calibration_interval"; fi
+    if [ "$probe_ok" = 1 ] && [ "$mode" = ordered ]; then maybe_calibrate "$name" "$calibration_interval"; fi
 
     result="$(result_values "$name" "$values" "$result_ttl" 2>/dev/null || true)"
     if [ -n "$result" ]; then
@@ -420,7 +421,9 @@ evaluate_candidate()
 
     score=0
     if [ "$healthy" = 1 ]; then
-        if [ "$mode" = automatic ] && { [ "$raw_score" -eq 1 ] || [ "$raw_score" -ge "$min_score" ]; }; then
+        # The default "Any" floor permits a healthy route without a current
+        # speed test. Higher floors require a fresh measured class.
+        if [ "$mode" = ordered ] && { { [ "$min_score" -le 2 ] && [ "$raw_score" -eq 1 ]; } || [ "$raw_score" -ge "$min_score" ]; }; then
             score="$raw_score"
         fi
     fi
@@ -436,6 +439,21 @@ evaluate_candidate()
         "$persisted_active" "$route_active" "$source" "$gateway" "$PROBE_ENDPOINT" "$(private_table "$name")" "$failures"
 }
 
+evaluate_mesh_candidate()
+{
+    active="$(uci_get active)"
+    role=standby; [ "$active" = mesh ] && role=active
+    if ! candidate_enabled mesh; then
+        printf 'mesh|0|0|0|0|0|0|0|unknown|0|0| |disabled|0|disabled|%s|%s:0| | | |22|0\n' "$role" "$active"
+    elif ip -4 route show table "$REMOTE_MESH_TABLE" default 2>/dev/null | grep -q '^default'; then
+        # AREDN/Babel owns and qualifies the remote default. PollyWAN does not
+        # re-export it or pretend it has a locally measurable data rate.
+        printf 'mesh|1|1|1|1|1|1|0|unknown|1|0| |remote_mesh_default|0|remote_mesh_default|%s|%s:0| | | |22|0\n' "$role" "$active"
+    else
+        printf 'mesh|1|0|0|0|0|0|0|unknown|0|0| |remote_mesh_unavailable|0|remote_mesh_unavailable|%s|%s:0| | | |22|0\n' "$role" "$active"
+    fi
+}
+
 read_active_line()
 {
     active="$1"
@@ -444,30 +462,28 @@ read_active_line()
 
 choose_candidate()
 {
-    preferred="$1"
-    best=''; best_score=-1
-    while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
-        [ "$configured" = 1 ] || continue
-        [ "$healthy" = 1 ] || continue
-        [ "$score" -gt 0 ] || continue
-        if [ "$score" -gt "$best_score" ] || { [ "$score" -eq "$best_score" ] && [ "$name" = "$preferred" ]; }; then
-            best="$name"; best_score="$score"
-        fi
-    done < "$CANDIDATE_FILE"
-    printf '%s|%s\n' "$best" "$best_score"
+    for slot in 1 2 3 4; do
+        name="$(uci_get "priority_$slot")"
+        case "$name" in wan|wan2|wan3|mesh) ;; *) continue ;; esac
+        line="$(awk -F'|' -v name="$name" '$1 == name { print; exit }' "$CANDIDATE_FILE")"
+        [ -n "$line" ] || continue
+        configured="$(printf '%s' "$line" | awk -F'|' '{print $2}')"
+        healthy="$(printf '%s' "$line" | awk -F'|' '{print $7}')"
+        score="$(printf '%s' "$line" | awk -F'|' '{print $10}')"
+        [ "$configured" = 1 ] && [ "$healthy" = 1 ] && [ "$score" -gt 0 ] || continue
+        printf '%s|%s\n' "$name" "$score"
+        return
+    done
+    printf '|0\n'
 }
 
-choose_healthy_candidate()
+candidate_rank()
 {
-    preferred="$1"
-    fallback=''
-    while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
-        [ "$configured" = 1 ] || continue
-        [ "$healthy" = 1 ] || continue
-        [ "$name" = "$preferred" ] && { printf '%s\n' "$name"; return; }
-        [ -n "$fallback" ] || fallback="$name"
-    done < "$CANDIDATE_FILE"
-    printf '%s\n' "$fallback"
+    target="$1"
+    for slot in 1 2 3 4; do
+        [ "$(uci_get "priority_$slot")" = "$target" ] && { printf '%s\n' "$slot"; return; }
+    done
+    printf '99\n'
 }
 
 reset_promotion()
@@ -491,6 +507,13 @@ promotion_ready()
 switch_to()
 {
     name="$1"
+    if [ "$name" = mesh ]; then
+        /usr/local/bin/wan3-manager withdraw 'Ordered policy selected Remote Mesh WAN' 1 || return 1
+        date +%s > "$SWITCH_FILE"
+        reset_export_recovery
+        reset_promotion
+        return 0
+    fi
     line="$(read_active_line "$name")"
     [ -n "$line" ] || return 1
     old_ifs="$IFS"; IFS='|'; set -- $line; IFS="$old_ifs"
@@ -535,17 +558,24 @@ write_status()
         active_probe_reason="${15:-none}"
     fi
     selected_default=null
-    ip -4 route show table 26 default 2>/dev/null | grep -q '^default' && selected_default='"0.0.0.0/0"'
+    selected_route_table=null
+    if [ "$active" = mesh ] && ip -4 route show table "$REMOTE_MESH_TABLE" default 2>/dev/null | grep -q '^default'; then
+        selected_default='"0.0.0.0/0"'
+        selected_route_table="$REMOTE_MESH_TABLE"
+    elif ip -4 route show table 26 default 2>/dev/null | grep -q '^default'; then
+        selected_default='"0.0.0.0/0"'
+        selected_route_table=26
+    fi
 
     tmp="$STATUS_FILE.tmp.$$"
     {
-        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":26,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
+        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":%s,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
             "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" \
             "$(json_escape "$mode")" "$(json_escape "$active")" "$(json_escape "$active_health")" "$active_upstream" "$active_gateway" \
             "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
             "$([ -n "$active_source" ] && [ "$active_source" != ' ' ] && printf '"%s"' "$(json_escape "$active_source")" || printf null)" \
             "$([ -n "$active_gateway_value" ] && [ "$active_gateway_value" != ' ' ] && printf '"%s"' "$(json_escape "$active_gateway_value")" || printf null)" \
-            "$active_private_table" "$selected_default" "$([ "$table28" = 1 ] && echo true || echo false)" \
+            "$active_private_table" "$selected_route_table" "$selected_default" "$([ "$table28" = 1 ] && echo true || echo false)" \
             "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" \
             "$(json_escape "$selected_bin")" "$(json_escape "$WAN1_TRANSPORT")" "$(json_escape "$message")" \
@@ -583,12 +613,12 @@ write_status()
     {
         printf '{"schema_version":1,"package_version":"%s","enabled":%s,"mode":"%s","active":%s,"health":"%s","gateway_reachable":%s,"upstream_reachable":%s,"selection_healthy":%s,"export_eligible":%s,"device":%s,"source":%s,"gateway":%s,"private_table":%s,"selected_table":%s,"mesh_exported":%s,"export_table":28,"probe_endpoint":%s,"probe_reason":"%s","next_probe_epoch":%s,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"candidates":[' \
             "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" "$(json_escape "$mode")" \
-            "$(case "$active" in wan|wan2|wan3) printf '"%s"' "$active" ;; *) printf null ;; esac)" \
+            "$(case "$active" in wan|wan2|wan3|mesh) printf '"%s"' "$active" ;; *) printf null ;; esac)" \
             "$(json_escape "$health")" "$active_gateway" "$active_upstream" "$active_selection_healthy" "$active_export_eligible" \
             "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
             "$([ -n "$active_source" ] && [ "$active_source" != ' ' ] && printf '"%s"' "$(json_escape "$active_source")" || printf null)" \
             "$([ -n "$active_gateway_value" ] && [ "$active_gateway_value" != ' ' ] && printf '"%s"' "$(json_escape "$active_gateway_value")" || printf null)" \
-            "$active_private_table" "$([ "$selected_default" = null ] && echo null || echo 26)" \
+            "$active_private_table" "$selected_route_table" \
             "$([ "$table28" = 1 ] && echo true || echo false)" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" "$active_next" \
             "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated"
@@ -638,7 +668,14 @@ evaluate_once()
     : > "$CANDIDATE_FILE"
 
     mode="$(uci_get selection_mode)"
-    case "$mode" in availability|adaptive) mode=automatic; uci -c /etc/config.mesh -q set "$CONFIG_PACKAGE.$CONFIG_SECTION.selection_mode=automatic"; uci -c /etc/config.mesh -q commit "$CONFIG_PACKAGE" ;; manual|automatic) ;; *) mode=manual ;; esac
+    case "$mode" in
+        ordered) ;;
+        *)
+            mode=ordered
+            uci -c /etc/config.mesh -q set "$CONFIG_PACKAGE.$CONFIG_SECTION.selection_mode=ordered"
+            uci -c /etc/config.mesh -q commit "$CONFIG_PACKAGE"
+            ;;
+    esac
     if [ "$(uci_get enabled)" != 1 ]; then
         if package_has_effects; then
             /usr/local/bin/wan-port-manager disable >/dev/null 2>&1 || true
@@ -666,7 +703,6 @@ evaluate_once()
     /usr/local/bin/wan3-manager usb-apply >/dev/null 2>&1 || true
     /usr/local/bin/wan-route-cache all >/dev/null 2>&1 || true
 
-    preferred="$(uci_get preferred_wan)"; case "$preferred" in wan|wan2|wan3) ;; *) preferred=wan ;; esac
     minimum="$(uci_get selection_min_bin)"; case "$minimum" in low|medium|fast) ;; *) minimum=unknown ;; esac
     min_score="$(class_score "$minimum")"
     result_ttl="$(number_setting speed_result_ttl 21600 900 86400)"
@@ -681,9 +717,10 @@ evaluate_once()
     for name in wan wan2 wan3; do
         evaluate_candidate "$name" "$mode" "$min_score" "$result_ttl" "$calibration_interval" "$failure_limit" >> "$CANDIDATE_FILE"
     done
+    evaluate_mesh_candidate >> "$CANDIDATE_FILE"
 
     active="$(uci_get active)"; case "$active" in wan|wan2|wan3|mesh|none) ;; *) active=wan ;; esac
-    chosen="$(choose_candidate "$preferred")"
+    chosen="$(choose_candidate)"
     old_ifs="$IFS"; IFS='|'; set -- $chosen; IFS="$old_ifs"
     best="$1"
 
@@ -704,32 +741,12 @@ evaluate_once()
     fi
 
     message='status only'
-    if [ "$mode" = manual ]; then
-        if [ "$active_healthy" = 1 ]; then
-            export_ok=0
-            [ "$active_upstream" = 1 ] && export_recovery_ready "$active" "$export_count" "$export_hold" && export_ok=1
-            /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" "$export_ok" >/dev/null 2>&1 || true
-            message="manual selection retained: $active"
-        else
-            manual_recovery="$(choose_healthy_candidate "$preferred")"
-            if [ -n "$manual_recovery" ] && switch_to "$manual_recovery" >/dev/null 2>&1; then
-                active="$(uci_get active)"
-                new_line="$(read_active_line "$active")"
-                [ -n "$new_line" ] && active_bin="$(printf '%s' "$new_line" | awk -F'|' '{print $9}')" || active_bin=none
-                message="manual selected WAN failed; selected healthy fallback $active"
-            else
-                /usr/local/bin/wan3-manager withdraw 'Manual selected local WAN failed' 1 >/dev/null 2>&1 || true
-                active="$(uci_get active)"; active_bin=none
-                message='manual selected local WAN failed; local defaults and Babel export withdrawn'
-            fi
-        fi
-        reset_promotion
-    elif [ -z "$best" ]; then
-        /usr/local/bin/wan3-manager withdraw 'No local WAN meets health and selection criteria' 1 >/dev/null 2>&1 || true
+    if [ -z "$best" ]; then
+        /usr/local/bin/wan3-manager withdraw 'No enabled route meets availability and data-rate policy' 1 >/dev/null 2>&1 || true
         active="$(uci_get active)"; active_bin=none
-        message='all local WANs withdrawn; table 22 may provide the remote Mesh WAN fallback'
+        message='no enabled route is currently eligible'
         reset_promotion
-    elif [ "$active" = mesh ] || [ "$active" = none ] || [ "$active_healthy" != 1 ] || [ "$active_score" -eq 0 ]; then
+    elif [ "$active" = none ] || [ "$active_healthy" != 1 ] || [ "$active_score" -eq 0 ]; then
         if switch_to "$best" >/dev/null 2>&1; then
             active="$(uci_get active)"
             new_line="$(read_active_line "$active")"
@@ -741,18 +758,21 @@ evaluate_once()
             message='fallback candidate failed; local defaults withdrawn'
         fi
     elif [ "$best" = "$active" ]; then
-        export_ok=0
-        [ "$active_upstream" = 1 ] && export_recovery_ready "$active" "$export_count" "$export_hold" && export_ok=1
-        /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" "$export_ok" >/dev/null 2>&1 || true
-        message="$active remains the best eligible local path"
+        if [ "$active" = mesh ]; then
+            /usr/local/bin/wan3-manager withdraw 'Remote Mesh WAN remains the highest-priority available route' 0 >/dev/null 2>&1 || true
+            message='Remote Mesh WAN remains the highest-priority available route'
+        else
+            export_ok=0
+            [ "$active_upstream" = 1 ] && export_recovery_ready "$active" "$export_count" "$export_hold" && export_ok=1
+            /usr/local/bin/wan3-manager select "$active" 0 "$active_bin" "$export_ok" >/dev/null 2>&1 || true
+            message="$active remains the highest-priority eligible route"
+        fi
         reset_promotion
     else
-        target_line="$(read_active_line "$best")"
-        old_ifs="$IFS"; IFS='|'; set -- $target_line; IFS="$old_ifs"
-        target_score="${10:-0}"
+        best_rank="$(candidate_rank "$best")"
+        active_rank="$(candidate_rank "$active")"
         should_promote=0
-        if [ "$target_score" -gt "$active_score" ]; then should_promote=1; fi
-        if [ "$target_score" -eq "$active_score" ] && [ "$target_score" -eq 1 ] && [ "$best" = "$preferred" ]; then should_promote=1; fi
+        [ "$best_rank" -lt "$active_rank" ] && should_promote=1
         last_switch="$(cat "$SWITCH_FILE" 2>/dev/null || true)"; valid_uint "$last_switch" || last_switch=0
         now="$(date +%s)"
         if [ "$should_promote" = 1 ] && [ $((now - last_switch)) -ge "$hold_down" ]; then
@@ -764,10 +784,10 @@ evaluate_once()
                     message="$best passed promotion but route installation failed; $active retained"
                 fi
             else
-                message="$best is better; waiting for promotion hysteresis"
+                message="$best is the recovered higher-priority route; waiting for recovery confirmation"
             fi
         else
-            message="$active retained by tie preference or hold-down"
+            message="$active retained until a higher-priority route is confirmed available"
             reset_promotion
         fi
     fi

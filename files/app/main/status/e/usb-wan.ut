@@ -14,32 +14,14 @@ if (request.env.REQUEST_METHOD === "PUT") {
         const device = request.args.wan3_device || "auto";
         if (device !== "auto" && !match(device, /^[A-Za-z0-9_.:-]+$/)) error = "USB interface must be auto or a valid Linux network-interface name";
         else {
+            uciMesh.set("aredn", "multiwan", "multiwan");
             uciMesh.set("aredn", "multiwan", "wan3_enable", enable);
             uciMesh.set("aredn", "multiwan", "wan3_device", device);
-            if (enable === "0" && (uciMesh.get("aredn", "multiwan", "active") || "wan") === "wan3") {
-                uciMesh.set("aredn", "multiwan", "active", "wan");
-                uciMesh.set("aredn", "multiwan", "selection_mode", "manual");
-            }
+            uciMesh.set("aredn", "multiwan", "selection_mode", "ordered");
             uciMesh.commit("aredn");
             if (uciMesh.get("aredn", "multiwan", "enabled") === "1") system("/usr/local/bin/wan3-manager usb-apply >/dev/null 2>&1; /usr/local/bin/wan-sla once >/dev/null 2>&1 &");
             message = enable === "1" ? "Phone USB tether settings saved" : "WAN 3 disabled";
         }
-    }
-    else if (action === "activate") {
-        uciMesh.set("aredn", "multiwan", "enabled", "1");
-        uciMesh.set("aredn", "multiwan", "wan3_enable", "1");
-        uciMesh.set("aredn", "multiwan", "selection_mode", "manual");
-        uciMesh.set("aredn", "multiwan", "active", "wan3");
-        uciMesh.commit("aredn");
-        system("rm -f /tmp/wan-sla/inhibit; /etc/init.d/wan3-manager restart >/dev/null 2>&1 &");
-        message = "Phone USB tether selected; the controller will use it when wan3 obtains DHCP and passes health checks";
-    }
-    else if (action === "fallback") {
-        uciMesh.set("aredn", "multiwan", "selection_mode", "manual");
-        uciMesh.set("aredn", "multiwan", "active", "wan");
-        uciMesh.commit("aredn");
-        system("/usr/local/bin/wan-sla once >/dev/null 2>&1 &");
-        message = "WAN 1 requested";
     }
     else error = "Invalid USB WAN action";
 }
@@ -77,7 +59,8 @@ const supportMessage = state && state.message || "Existing kernel USB-network su
             <div class="cols"><div><div class="o">hAP USB network interface</div><div class="m">Use auto, or enter the exact existing RNDIS/CDC interface; PollyWAN does not replace kernel modules</div></div><div style="flex:0"><input name="wan3_device" type="text" size="18" pattern="auto|[A-Za-z0-9_.:\-]+" value="{{uciMesh.get("aredn", "multiwan", "wan3_device") || "auto"}}" required></div></div>
         </form>
         {{_H("Use a data-capable USB cable, unlock the Android phone, open hotspot/tethering settings, and enable USB tethering. USB charging alone is insufficient. Supported phones normally expose RNDIS, CDC Ethernet, or CDC NCM, but driver availability depends on the AREDN kernel and hardware. WAN 3 disabled means PollyWAN does not touch USB networking. Serial GPS time service remains owned entirely by AREDN/gpsd.")}}
-        <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-include="#usb-wan-form" hx-vals='{"action":"save"}'>Save USB settings</button><div class="pw-spacer"></div><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-vals='{"action":"fallback"}'>Use WAN 1</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-vals='{"action":"activate"}' {{!enabled || !(iface && iface.up) ? "disabled" : ""}}>Use WAN 3 now</button></div>
+        <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-include="#usb-wan-form" hx-vals='{"action":"save"}'>Save USB settings</button></div>
+        <div class="pw-notice">Route Policy Setup controls when USB is selected. This page only enables and identifies the USB network interface.</div>
     </div>
     {{_R("dialog-footer", "nocancel")}}
     <script>(function(){ {{_R("open")}} htmx.on("#dialog-done", "click", _ => htmx.ajax("GET", "/a/u-usb-wan", { target: "#usb-wan", swap: "outerHTML" })); })();</script>

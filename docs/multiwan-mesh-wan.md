@@ -16,7 +16,10 @@ AREDN exposes two independent settings:
 - **Mesh to WAN** (`aredn.@wan[0].mesh_to_local_wan`) lets RF, DtD and xlink mesh traffic use this node's qualified local Internet path.
 - **LAN to Mesh WAN** (`aredn.@wan[0].lan_to_remote_wan`) lets this node's LAN clients use a default learned from another mesh gateway.
 
-The package does not create `wifiwan` or treat a remote Mesh WAN as `wan4`. Babel remains responsible for choosing the remote gateway. PollyWAN rotates only the local candidates `wan`, `wan2`, and `wan3`; when Wi-Fi client mode is configured, that Wi-Fi path is candidate `wan`.
+The package does not create `wifiwan` or a `wan4` interface. Babel remains
+responsible for choosing the remote gateway in table 22. R29.5 nevertheless
+exposes Remote Mesh WAN as an enabled ordered route so it can appear anywhere
+in the same preference list as `wan`, `wan2`, and `wan3`.
 
 ## AREDN routing tables
 
@@ -81,25 +84,31 @@ Each enabled candidate—including Wi-Fi WAN 1—must have:
 
 Availability is always decided by route validation and source-bound external HTTPS. Gateway ICMP is diagnostic only: a responsive local gateway does not prove Internet reachability. Throughput tests are separate, occasional measurements and must not withdraw an otherwise reachable path. A hard interface failure is immediate. The selected path receives the configured application-failure hysteresis, but a standby that fails its current probe is never eligible for promotion.
 
-### Speed classes
+### Minimum allowable local data rate
 
-Automatic mode uses fresh bounded speed results:
+Fresh bounded speed results classify local routes:
 
 - `low`: 5 Mbps or less
 - `medium`: above 5 through 30 Mbps
 - `fast`: above 30 Mbps
 
-A candidate below `selection_min_bin`, or without a fresh result, remains healthy but uses class Unknown for automatic ranking. The controller also clamps an invalid direct-UCI configuration so `speed_test_interval` cannot exceed `speed_result_ttl`; this prevents every speed class from remaining stale between refreshes.
+A local route below `selection_min_bin` remains healthy but is ineligible for
+selection. The default Low setting means any healthy route is allowable and
+does not require a current measurement. Medium means at least 5 Mbps and Fast
+means at least 30 Mbps; those higher floors require a fresh result. Speed never
+reorders routes. Remote Mesh WAN is exempt because its availability is the
+Babel-learned table-22 default.
 
 ### Rotation and hysteresis
 
-1. A healthy higher bin wins.
-2. The configured preferred WAN wins a tie in the same bin.
-3. A failed or ineligible active WAN is replaced immediately by the best eligible candidate.
-4. A non-emergency promotion requires `promote_count` consecutive better observations.
-5. `hold_down` prevents rapid switching after a successful promotion.
-6. If no local WAN qualifies, tables 26, 27 and 28 are withdrawn. Table 22 may then provide the remote Mesh WAN fallback.
-7. An administrator selecting **Use remote Mesh WAN fallback** places the controller in manual mode so the next automatic pass does not immediately undo that explicit choice.
+1. `priority_1` through `priority_4` define the only route order.
+2. Disabled, unavailable, unhealthy, or too-slow local routes are skipped.
+3. Remote Mesh WAN is eligible when enabled and table 22 has a default.
+4. A failed or ineligible active route is replaced immediately by the next
+   eligible route in order.
+5. Returning to a recovered higher-priority route requires `promote_count`
+   successful observations and the `hold_down` interval.
+6. If no route qualifies, local tables 26, 27 and 28 are withdrawn.
 
 ## How AREDN settings combine
 

@@ -11,7 +11,7 @@ PollyWAN is experimental and is not an official AREDN release.
 - manages WAN1, WAN2, and optional WAN3 as local Internet candidates
 - keeps the Babel-learned remote Mesh WAN as the fallback in table 22
 - separates lightweight health checks from occasional throughput tests
-- offers simple Manual and Automatic selection modes
+- offers one explicit ordered route policy with deterministic failover
 - supports AREDN node-to-node iperf3 and Cloudflare Internet-path tests
 - assigns hAP Ethernet roles with timed rollback and confirmation
 - supports optional Android USB tethering for WAN3
@@ -128,7 +128,8 @@ Use the same **Packages** → **Upload Package** workflow and select the newer A
 ## First-time setup
 
 1. Open the PollyWAN dashboard.
-2. Open **WAN policy** and choose **Manual** or **Automatic**.
+2. Open **Route Policy Setup**, enable the allowed routes, and arrange all four
+   choices from first preference through last resort.
 3. Choose the preferred connection.
 4. Enable only the WAN candidates you intend to use.
 5. To use Ethernet WAN roles, open **Ethernet ports** and assign the ports.
@@ -144,26 +145,26 @@ Keep at least one LAN or mesh management path available while changing Ethernet 
 - `wan` — WAN 1. Uses AREDN Wi-Fi client mode when a radio owns logical interface `wan`; otherwise it uses administrator-selected Ethernet ports.
 - `wan2` — WAN2 on administrator-selected Ethernet ports.
 - `wan3` — Android USB tether; optional Android USB-tethered Ethernet using RNDIS, CDC Ethernet, or CDC NCM.
-- Remote Mesh WAN — the Babel-learned default in table 22; it is not treated as a fourth local candidate.
+- Remote Mesh WAN — the Babel-learned default in table 22. R29.5 exposes it as
+  an enabled route and an ordered failover choice, while Babel continues to own
+  the remote gateway.
 
 Wi-Fi WAN and Ethernet WAN1 are mutually exclusive because AREDN assigns both the logical interface name `wan`. PollyWAN observes the existing radio configuration and does not change radio modes.
 
-## WAN selection
+## Ordered route policy (R29.5)
 
-### Manual
+Route Policy Setup provides four explicit priority slots covering WAN 1, WAN 2,
+Android USB tether, and Remote Mesh WAN. PollyWAN uses the first enabled,
+eligible route. It fails downward immediately after the configured failure
+threshold and returns upward only after the recovered route passes the success
+count and hold-down. This produces deterministic A → B → C failover and
+C → B → A recovery.
 
-Uses the selected WAN while it remains healthy. If it fails, PollyWAN immediately selects the best healthy fallback. It does not automatically return to the original WAN unless the administrator selects it again or enables the advanced return option.
-
-### Automatic
-
-## Selection Modes
-
-PollyWAN exposes two operator-facing modes:
-
-- **Manual** — uses the selected connection while it is healthy. If it fails, PollyWAN immediately selects the best healthy fallback. It does not automatically return to the original preferred connection unless the operator chooses it again or enables the advanced return option.
-- **Automatic** — ranks only healthy WANs by the newest valid speed class: Fast, Medium, Low, or Unknown. Same-class Mbps differences do not cause switching. A higher class requires consecutive observations before promotion, while a failed current WAN is replaced immediately.
-
-Health and speed are separate. Health checks decide whether a WAN is usable. Speed tests only classify healthy WANs for Automatic ranking. A failed or expired speed test never marks an otherwise healthy WAN down.
+Health and speed are separate. Health checks decide whether a local WAN is
+usable. An optional minimum allowable local data rate can make a measured local
+route ineligible, but speed never reorders the configured priorities. Remote
+Mesh WAN eligibility is based on the presence of an AREDN/Babel table-22
+default, not a local speed test.
 
 Gateway reachability is diagnostic only. A local gateway that responds to ICMP does not make a WAN healthy unless the source-bound external HTTPS health check also succeeds. If the active WAN fails that raw upstream check, table 28 is withdrawn immediately so the mesh stops using the known-bad exit while local selection hysteresis decides whether to keep or replace the active path. Recovered exits are re-advertised only after the configured export recovery count and hold-down.
 
@@ -174,9 +175,9 @@ Default classes:
 - Fast: greater than 30 Mbps
 - Unknown: no fresh valid measurement
 
-Small Mbps differences within the same class do not cause switching. A failed current WAN is replaced immediately; promotion to a higher class requires consecutive observations.
-
-Health and speed are separate. A failed or expired speed test does not mark an otherwise healthy WAN down.
+The GUI presents these thresholds as Any healthy local route, at least 5 Mbps,
+or at least 30 Mbps. Response-code lists remain safe package defaults and are
+not operator-facing fields.
 
 ## Connection speed tests
 

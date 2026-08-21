@@ -140,6 +140,7 @@ if (request.env.REQUEST_METHOD === "PUT") {
         else if (!wifiWan.active && wanEnabled && wanCount < 1) error = "WAN 1 is enabled but no port is assigned to WAN 1";
         else if (wan2Enabled && wan2Count < 1) error = "WAN 2 is enabled but no port is assigned to WAN 2";
         else {
+            uciMesh.set("aredn", "multiwan", "multiwan");
             uciMesh.set("aredn", "multiwan", "port_roles_enabled", request.args.port_roles_enabled === "on" ? "1" : "0");
             uciMesh.set("aredn", "multiwan", "wan_enable", wanEnabled ? "1" : "0");
             uciMesh.set("aredn", "multiwan", "wan2_enable", wan2Enabled ? "1" : "0");

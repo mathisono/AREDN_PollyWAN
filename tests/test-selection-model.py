@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Executable policy tests for PollyWAN's simplified selection invariants."""
+"""Executable policy tests for R29.5 ordered route selection."""
 
 from dataclasses import dataclass
 
@@ -9,94 +9,63 @@ CLASS_SCORE = {"unknown": 1, "low": 2, "medium": 3, "fast": 4}
 @dataclass(frozen=True)
 class Candidate:
     name: str
-    configured: bool = True
+    enabled: bool = True
     healthy: bool = True
     speed_class: str = "unknown"
     fresh: bool = True
+    remote_mesh: bool = False
 
-    @property
-    def class_for_selection(self) -> str:
-        return self.speed_class if self.fresh else "unknown"
+    def eligible(self, minimum: str = "low") -> bool:
+        if not self.enabled or not self.healthy:
+            return False
+        if self.remote_mesh:
+            return True
+        score = CLASS_SCORE[self.speed_class if self.fresh else "unknown"]
+        floor = CLASS_SCORE[minimum]
+        return (floor <= CLASS_SCORE["low"] and score == CLASS_SCORE["unknown"]) or score >= floor
 
-    @property
-    def score(self) -> int:
-        if not self.configured or not self.healthy:
-            return 0
-        return CLASS_SCORE[self.class_for_selection]
 
-
-def automatic_choice(candidates: list[Candidate], current: str, preferred: str) -> str | None:
-    healthy = [c for c in candidates if c.score > 0]
-    if not healthy:
-        return None
-    current_candidate = next((c for c in healthy if c.name == current), None)
-    best_score = max(c.score for c in healthy)
-    if current_candidate and current_candidate.score == best_score:
-        return current
-    tied = [c for c in healthy if c.score == best_score]
-    if best_score == CLASS_SCORE["unknown"]:
-        return preferred if any(c.name == preferred for c in tied) else tied[0].name
-    if any(c.name == preferred for c in tied):
-        return preferred
-    for name in ("wan", "wan2", "wan3"):
-        if any(c.name == name for c in tied):
+def ordered_choice(candidates: list[Candidate], order: list[str], minimum: str = "low") -> str | None:
+    by_name = {candidate.name: candidate for candidate in candidates}
+    for name in order:
+        candidate = by_name.get(name)
+        if candidate and candidate.eligible(minimum):
             return name
-    return tied[0].name
-
-
-def manual_choice(candidates: list[Candidate], selected: str, preferred: str) -> str | None:
-    selected_candidate = next((c for c in candidates if c.name == selected), None)
-    if selected_candidate and selected_candidate.healthy and selected_candidate.configured:
-        return selected
-    for name in (preferred, "wan", "wan2", "wan3"):
-        fallback = next((c for c in candidates if c.name == name), None)
-        if fallback and fallback.healthy and fallback.configured:
-            return fallback.name
     return None
 
 
-def promotion_ready(active: Candidate, target: Candidate, observations: int) -> bool:
-    if active.score == 0:
-        return target.score > 0
-    return target.score > active.score and observations >= 2
+def recovery_ready(active: str, target: str, order: list[str], observations: int, hold_down_done: bool) -> bool:
+    if active not in order or target not in order:
+        return False
+    return order.index(target) < order.index(active) and observations >= 2 and hold_down_done
 
 
 def main() -> None:
-    assert manual_choice([Candidate("wan"), Candidate("wan2")], "wan", "wan2") == "wan"
-    assert manual_choice([Candidate("wan", healthy=False), Candidate("wan2")], "wan", "wan2") == "wan2"
+    order = ["wan", "wan2", "wan3", "mesh"]
+    all_up = [Candidate("wan"), Candidate("wan2"), Candidate("wan3"), Candidate("mesh", remote_mesh=True)]
+    assert ordered_choice(all_up, order) == "wan"
 
-    assert automatic_choice(
-        [Candidate("wan", speed_class="medium"), Candidate("wan2", speed_class="medium")],
-        "wan",
-        "wan2",
-    ) == "wan"
-    assert not promotion_ready(Candidate("wan", speed_class="medium"), Candidate("wan2", speed_class="fast"), 1)
-    assert promotion_ready(Candidate("wan", speed_class="medium"), Candidate("wan2", speed_class="fast"), 2)
-    assert promotion_ready(Candidate("wan", healthy=False, speed_class="fast"), Candidate("wan2", speed_class="low"), 0)
+    a_down = [Candidate("wan", healthy=False), Candidate("wan2"), Candidate("wan3"), Candidate("mesh", remote_mesh=True)]
+    assert ordered_choice(a_down, order) == "wan2"
+    a_b_down = [Candidate("wan", healthy=False), Candidate("wan2", healthy=False), Candidate("wan3"), Candidate("mesh", remote_mesh=True)]
+    assert ordered_choice(a_b_down, order) == "wan3"
+    local_down = [Candidate("wan", healthy=False), Candidate("wan2", healthy=False), Candidate("wan3", healthy=False), Candidate("mesh", remote_mesh=True)]
+    assert ordered_choice(local_down, order) == "mesh"
+    assert ordered_choice([Candidate("mesh", enabled=False, remote_mesh=True)], order) is None
 
-    assert automatic_choice(
-        [Candidate("wan", speed_class="fast", fresh=False), Candidate("wan2", speed_class="medium", fresh=False)],
-        "mesh",
-        "wan2",
-    ) == "wan2"
-    assert automatic_choice(
-        [Candidate("wan", speed_class="unknown"), Candidate("wan2", speed_class="unknown")],
-        "wan",
-        "wan",
-    ) == "wan"
-    assert Candidate("wan", healthy=True, fresh=False, speed_class="fast").score == CLASS_SCORE["unknown"]
-    assert Candidate("wan", healthy=True, fresh=True, speed_class="unknown").score == CLASS_SCORE["unknown"]
+    # Speed is an eligibility floor, never a ranking input.
+    assert ordered_choice([Candidate("wan", speed_class="low"), Candidate("wan2", speed_class="fast")], order) == "wan"
+    assert ordered_choice([Candidate("wan", speed_class="low"), Candidate("wan2", speed_class="fast")], order, "medium") == "wan2"
+    assert ordered_choice([Candidate("wan", fresh=False), Candidate("mesh", remote_mesh=True)], order, "medium") == "mesh"
 
-    # A failed speed test is modelled as an unknown class, not a failed health check.
-    assert automatic_choice(
-        [Candidate("wan", speed_class="unknown"), Candidate("wan2", speed_class="medium")],
-        "wan",
-        "wan",
-    ) == "wan2"
-    assert CLASS_SCORE["low"] < CLASS_SCORE["medium"] < CLASS_SCORE["fast"]
-    assert {"manual": "manual", "availability": "automatic", "adaptive": "automatic"}["adaptive"] == "automatic"
+    # Fail downward immediately; return upward only after confirmation and hold-down.
+    assert not recovery_ready("wan3", "wan2", order, 1, True)
+    assert not recovery_ready("wan3", "wan2", order, 2, False)
+    assert recovery_ready("wan3", "wan2", order, 2, True)
+    assert recovery_ready("wan2", "wan", order, 2, True)
+    assert not recovery_ready("wan2", "wan3", order, 2, True)
 
-    print("simplified selection policy model passed")
+    print("ordered route policy model passed")
 
 
 if __name__ == "__main__":
