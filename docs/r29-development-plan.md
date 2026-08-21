@@ -63,7 +63,11 @@ Do not silently change the audit baseline during an r29 test cycle.
 8. After r29 validation, freeze a fresh authoritative nightly commit and begin
    r30. Do not mix the nightly source adaptation into the stable r29 APK.
 
-## r29.5 follow-up list
+## r29.5 release scope
+
+Development for these corrective changes continues on `release/r29.5`. The
+explicit Ethernet and Selection Policy apply controls are R29.5 changes; they
+are not part of the published R29 APK.
 
 ### Preserve and verify initialization
 
@@ -102,6 +106,8 @@ save may discard the package-owned section. R29.5 must:
 - keep the PollyWAN Selection Policy apply control directly beneath its form
   and label it `Save and apply policy`, matching the handler's existing commit
   and controller-restart behavior;
+- state beside both apply controls that the dialog's `Done` button only closes
+  the window and never saves or applies configuration;
 - verify the saved persistent value is synchronized to runtime before starting
   or restarting PollyWAN services;
 - preserve the section across AREDN configuration regeneration, or move
