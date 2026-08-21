@@ -96,6 +96,12 @@ save may discard the package-owned section. R29.5 must:
 - make every GUI save handler create or repair the `multiwan` section before
   setting options, verify the mesh commit, and show a visible error when a set,
   commit, or apply operation fails;
+- keep the Ethernet Port Roles Save and Apply-with-rollback controls directly
+  beneath the port-role table instead of below the unrelated XLinks editor and
+  help content, so applying a role change is visible at the point of editing;
+- keep the PollyWAN Selection Policy apply control directly beneath its form
+  and label it `Save and apply policy`, matching the handler's existing commit
+  and controller-restart behavior;
 - verify the saved persistent value is synchronized to runtime before starting
   or restarting PollyWAN services;
 - preserve the section across AREDN configuration regeneration, or move
