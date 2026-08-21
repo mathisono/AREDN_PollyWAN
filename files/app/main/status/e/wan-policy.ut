@@ -146,7 +146,7 @@ for (let i = 1; i <= 4; i++) push(priorities, uciMesh.get("aredn", "multiwan", `
         <form id="wan-policy-form">
             <div class="cols"><div><div class="o">Enable PollyWAN</div><div class="m">Disabled installation is inert and leaves ordinary AREDN networking and GPS untouched</div></div><div style="flex:0"><input type="checkbox" name="enabled" {{enabled ? "checked" : ""}}></div></div>
             <div class="cols"><div><div class="o">Enabled routes</div><div class="m">Only checked routes can be selected. Remote Mesh WAN uses an AREDN/Babel default from table 22.</div></div><div style="flex:0;white-space:nowrap"><label>WAN 1 <input type="checkbox" name="wan_enable" {{uciMesh.get("aredn", "multiwan", "wan_enable") !== "0" ? "checked" : ""}}></label> <label>WAN 2 <input type="checkbox" name="wan2_enable" {{uciMesh.get("aredn", "multiwan", "wan2_enable") === "1" ? "checked" : ""}}></label> <label>USB <input type="checkbox" name="wan3_enable" {{uciMesh.get("aredn", "multiwan", "wan3_enable") === "1" ? "checked" : ""}}></label> <label>Remote Mesh WAN <input type="checkbox" name="mesh_enable" {{uciMesh.get("aredn", "multiwan", "mesh_enable") === "1" ? "checked" : ""}}></label></div></div>
-            <div class="cols"><div><div class="o">Preferred connection order</div><div class="m">Use choice 1 whenever it is eligible. If it fails, use choice 2, then 3, then 4. Return upward only after the higher-priority route passes the recovery checks.</div></div><div class="pw-field">{% const orderLabels = [ "1 — use first", "2 — if 1 fails", "3 — if 1 and 2 fail", "4 — last resort" ]; for (let i = 0; i < 4; i++) { %}<label>{{orderLabels[i]}}<select name="priority_{{i + 1}}">{% for (let j = 0; j < length(routeChoices); j++) { const choice = routeChoices[j]; %}<option value="{{choice.value}}" {{priorities[i] === choice.value ? "selected" : ""}}>{{choice.label}}</option>{% } %}</select></label>{% } %}</div></div>
+            <div class="cols"><div><div class="o">Preferred connection order</div><div class="m">Use choice 1 whenever it is eligible. If it fails, use choice 2, then 3, then 4. Selecting a route already used in another position swaps the two positions. Return upward only after the higher-priority route passes the recovery checks.</div></div><div class="pw-field">{% const orderLabels = [ "1 — use first", "2 — if 1 fails", "3 — if 1 and 2 fail", "4 — last resort" ]; for (let i = 0; i < 4; i++) { %}<label>{{orderLabels[i]}}<select name="priority_{{i + 1}}" data-priority-order>{% for (let j = 0; j < length(routeChoices); j++) { const choice = routeChoices[j]; %}<option value="{{choice.value}}" {{priorities[i] === choice.value ? "selected" : ""}}>{{choice.label}}</option>{% } %}</select></label>{% } %}</div></div>
             <div class="cols"><div><div class="o">Minimum allowable local data rate</div><div class="m">Affects WAN 1, WAN 2, and USB after a speed result exists. Remote Mesh WAN is judged by route availability. Higher settings require a current speed test.</div></div><div class="pw-field"><select name="selection_min_bin"><option value="low" {{uciMesh.get("aredn", "multiwan", "selection_min_bin") === "low" ? "selected" : ""}}>Any healthy local route</option><option value="medium" {{uciMesh.get("aredn", "multiwan", "selection_min_bin") === "medium" ? "selected" : ""}}>At least 5 Mbps</option><option value="fast" {{uciMesh.get("aredn", "multiwan", "selection_min_bin") === "fast" ? "selected" : ""}}>At least 30 Mbps</option></select></div></div>
             <div class="cols"><div><div class="o">Offer selected local Internet route to the mesh</div><div class="m">Publishes table 28 only while the selected local route is healthy and meets the sharing data-rate floor.</div></div><div style="flex:0"><input type="checkbox" name="mesh_to_local_wan" {{uciMesh.get("aredn", "@wan[0]", "mesh_to_local_wan") === "1" ? "checked" : ""}}></div></div>
             <div class="cols"><div><div class="o">Minimum local data rate offered to mesh users</div><div class="m">This does not affect local failover; it only controls whether the selected local route is advertised to other mesh nodes.</div></div><div class="pw-field"><select name="mesh_share_min_bin"><option value="low" {{uciMesh.get("aredn", "multiwan", "mesh_share_min_bin") === "low" ? "selected" : ""}}>Any measured rate</option><option value="medium" {{uciMesh.get("aredn", "multiwan", "mesh_share_min_bin") === "medium" ? "selected" : ""}}>At least 5 Mbps</option><option value="fast" {{uciMesh.get("aredn", "multiwan", "mesh_share_min_bin") === "fast" ? "selected" : ""}}>At least 30 Mbps</option></select></div></div>
@@ -160,5 +160,24 @@ for (let i = 1; i <= 4; i++) push(priorities, uciMesh.get("aredn", "multiwan", `
         {{_H("The configured connection order is authoritative: speed never reorders routes. A local route must pass its source-bound HTTPS health check and the minimum data-rate policy. Remote Mesh WAN is eligible only when enabled and an AREDN/Babel default exists in table 22. Failover to the next eligible route is immediate after the failure threshold; returning to a recovered higher-priority route uses the configured success count and hold-down. A remote default is never copied into table 28.")}}
     </div>
     {{_R("dialog-footer", "nocancel")}}
-    <script>(function(){ {{_R("open")}} htmx.on("#dialog-done", "click", _ => htmx.ajax("GET", "/a/u-wan-policy", { target: "#wan-policy", swap: "outerHTML" })); })();</script>
+    <script>(function(){
+        {{_R("open")}}
+        const form = document.getElementById("wan-policy-form");
+        const order = form ? form.querySelectorAll("select[data-priority-order]") : [];
+        for (let i = 0; i < order.length; i++) {
+            order[i].setAttribute("data-previous-priority", order[i].value);
+            order[i].addEventListener("change", function() {
+                const previous = this.getAttribute("data-previous-priority");
+                for (let j = 0; j < order.length; j++) {
+                    if (order[j] !== this && order[j].value === this.value) {
+                        order[j].value = previous;
+                        order[j].setAttribute("data-previous-priority", previous);
+                        break;
+                    }
+                }
+                this.setAttribute("data-previous-priority", this.value);
+            });
+        }
+        htmx.on("#dialog-done", "click", _ => htmx.ajax("GET", "/a/u-wan-policy", { target: "#wan-policy", swap: "outerHTML" }));
+    })();</script>
 </div>

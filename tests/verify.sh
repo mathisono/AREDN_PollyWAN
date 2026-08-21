@@ -47,6 +47,7 @@ docs/aredn-sysinfo-integration-plan.md
 tools/openclaw-build-test-prompt.md
 tools/sync-integration.sh
 tests/test-selection-model.py
+tests/test-route-order-ui.js
 tests/mock-mesh-exit.sh
 files/app/main/u-multiwan.ut
 files/app/main/u-wan-policy.ut
@@ -86,7 +87,7 @@ done
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
 require_text Makefile 'PKG_VERSION:=0.1.0.29.5'
-require_text Makefile 'PKG_RELEASE:=3'
+require_text Makefile 'PKG_RELEASE:=4'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -133,6 +134,8 @@ require_text "$DEFAULTS" 'set_default priority_1 wan'
 require_text "$DEFAULTS" 'set_default priority_2 wan2'
 require_text "$DEFAULTS" 'set_default priority_3 wan3'
 require_text "$DEFAULTS" 'set_default priority_4 mesh'
+require_text "$DEFAULTS" '$UCI -q get "aredn.multiwan.$option" >/dev/null 2>&1 || $UCI set "aredn.multiwan.$option=$value"'
+require_text "$DEFAULTS" 'ordered) ;;'
 require_text "$DEFAULTS" 'set_default port1_role wan'
 require_text "$DEFAULTS" 'set_default port2_role lan'
 require_text "$DEFAULTS" 'set_default port5_dtd 1'
@@ -403,6 +406,9 @@ require_text files/app/partial/wan-policy.ut 'remote_mesh_exit_node'
 require_text files/app/main/status/e/wan-policy.ut 'private table 101'
 require_text files/app/main/status/e/wan-policy.ut 'Route Policy Setup'
 require_text files/app/main/status/e/wan-policy.ut 'Preferred connection order'
+require_text files/app/main/status/e/wan-policy.ut 'Selecting a route already used in another position swaps the two positions.'
+require_text files/app/main/status/e/wan-policy.ut 'select[data-priority-order]'
+require_text files/app/main/status/e/wan-policy.ut 'data-previous-priority'
 require_text files/app/main/status/e/wan-policy.ut 'Remote Mesh WAN'
 require_text files/app/main/status/e/wan-policy.ut 'Minimum allowable local data rate'
 require_text files/app/main/status/e/wan-policy.ut 'Internet check URL'
@@ -422,6 +428,8 @@ reject_text files/app/main/status/e/wan-policy.ut 'Done</b> only closes this win
 reject_text files/app/main/status/e/wan-policy.ut '>Manual<'
 reject_text files/app/main/status/e/wan-policy.ut '>Automatic<'
 require_text files/app/partial/wan-policy.ut 'Ordered failover'
+require_text files/app/partial/wan-policy.ut 'Preferred order'
+require_text files/app/partial/wan-policy.ut 'preferredOrder()'
 require_text files/app/partial/wan-policy.ut 'Candidate status'
 require_text files/app/partial/wan-policy.ut 'Eligibility'
 require_text files/app/partial/wan-policy.ut 'Controller decision'
@@ -549,6 +557,7 @@ actual_manifest="$(
 ./tests/mock-tunnel-guard.sh
 ./tests/mock-mesh-exit.sh
 ./tests/test-selection-model.py
+node tests/test-route-order-ui.js
 
 python3 - <<'PY'
 from html.parser import HTMLParser

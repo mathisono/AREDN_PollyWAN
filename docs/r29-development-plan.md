@@ -171,6 +171,26 @@ are not part of the published R29 APK.
   and
   `/home/mat/pollywan-backups/KP4DJT-HAP-AC2-VAN/20260821T052504Z-r29.5-r3-preupgrade`.
 
+### R29.5 r4 route-order persistence correction
+
+- KP4DJT's r2 and r3 pre-upgrade snapshots both contain the default ordered
+  policy, and their install invariance comparisons are byte-for-byte equal.
+  The redeployments therefore preserved the UCI state they received; the
+  operator's earlier route-order edit had never been committed.
+- The Route Policy Setup dialog previously exposed four independent selectors
+  while requiring every route to appear exactly once. Changing one selector to
+  a route already present elsewhere produced a duplicate, caused the server to
+  reject the entire save, and then re-rendered the persisted default order.
+- Route-order selectors now swap positions automatically, so each edit remains
+  a complete permutation that can be saved. The dashboard shows the complete
+  saved order instead of only the first choice.
+- The initializer's upgrade contract is covered explicitly: `set_default`
+  writes only absent values, and an existing `selection_mode=ordered` bypasses
+  migration. Thus an already-saved r29.5 route order remains untouched during
+  an APK upgrade.
+- The r4 APK must pass standalone and synchronized integration verification,
+  then demonstrate on KP4DJT that a non-default saved order survives reinstall.
+
 ### Ordered Route Policy Setup
 
 R29.5 replaces the Manual/Automatic and speed-ranked policy with one ordered
