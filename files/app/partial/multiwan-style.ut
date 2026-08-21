@@ -25,6 +25,10 @@
   gap: .4rem;
   margin-top: .75rem;
 }
+#multiwan-page .pw-state-detail {
+  color: var(--pw-muted);
+  font-size: .82rem;
+}
 #multiwan-page .pw-state-item {
   align-items: center;
   border: 1px solid var(--pw-border);
@@ -43,14 +47,6 @@
   height: .55rem;
   width: .55rem;
 }
-#multiwan-page .pw-state-inactive {
-  border-color: var(--pw-border);
-  color: var(--pw-muted);
-}
-#multiwan-page .pw-state-inactive .pw-status-dot {
-  background: transparent;
-  border-color: var(--pw-border);
-}
 #multiwan-page .pw-state-current {
   color: var(--pw-text);
   font-weight: 600;
@@ -63,6 +59,8 @@
 #multiwan-page .pw-state-current.pw-state-bad .pw-status-dot { background: var(--pw-bad); border-color: var(--pw-bad); }
 #multiwan-page .pw-state-current.pw-state-info { border-color: var(--pw-active); }
 #multiwan-page .pw-state-current.pw-state-info .pw-status-dot { background: var(--pw-active); border-color: var(--pw-active); }
+#multiwan-page .pw-state-current.pw-state-off { border-color: var(--pw-off); }
+#multiwan-page .pw-state-current.pw-state-off .pw-status-dot { background: var(--pw-off); border-color: var(--pw-off); }
 #multiwan-page *, #multiwan-page *::before, #multiwan-page *::after,
 .pollywan-dialog *, .pollywan-dialog *::before, .pollywan-dialog *::after {
   box-sizing: border-box;
@@ -227,7 +225,8 @@
 .pollywan-dialog {
   max-width: min(760px, calc(100vw - 1rem));
 }
-.pollywan-dialog.pollywan-ports-page {
+.pollywan-dialog.pollywan-ports-page,
+.pollywan-dialog.pollywan-wide-page {
   max-width: 1440px !important;
   min-width: 0 !important;
   width: 96vw !important;
@@ -358,7 +357,8 @@
   .pollywan-dialog button { min-height: 2.5rem; }
   .pollywan-dialog select,
   .pollywan-dialog input:not([type="checkbox"]) { width: 100%; }
-  .pollywan-dialog.pollywan-ports-page {
+  .pollywan-dialog.pollywan-ports-page,
+  .pollywan-dialog.pollywan-wide-page {
     max-width: calc(100vw - 1rem) !important;
     width: calc(100vw - 1rem) !important;
   }

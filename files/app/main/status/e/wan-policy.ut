@@ -32,16 +32,6 @@ function requestedValue(name, fallback)
 {
     return request.args[name] != null ? request.args[name] : fallback;
 }
-function routeLabel(value)
-{
-    return value === "wan" ? "WAN 1" : value === "wan2" ? "WAN 2" : value === "wan3" ? "Android USB tether" : value === "mesh" ? "Remote Mesh WAN" : "Unknown route";
-}
-function readJson(path)
-{
-    const value = fs.readfile(path);
-    if (!value) return null;
-    try { return json(value); } catch (_) { return null; }
-}
 function wifiWanInfo()
 {
     const radio0 = uciMesh.get("setup", "globals", "radio0_mode") || "";
@@ -139,9 +129,6 @@ if (request.env.REQUEST_METHOD === "PUT") {
 }
 
 const enabled = uciMesh.get("aredn", "multiwan", "enabled") === "1";
-const active = uciMesh.get("aredn", "multiwan", "active") || "wan";
-const status = readJson("/tmp/wan-sla/status.json");
-const candidates = status && status.candidates || [];
 const routeChoices = [
     { value: "wan", label: `WAN 1 (${wifiWan.label})` },
     { value: "wan2", label: "WAN 2" },
@@ -151,11 +138,10 @@ const routeChoices = [
 const priorities = [];
 for (let i = 1; i <= 4; i++) push(priorities, uciMesh.get("aredn", "multiwan", `priority_${i}`) || routeChoices[i - 1].value);
 %}
-<div class="dialog pollywan-dialog">
+<div class="dialog pollywan-dialog pollywan-wide-page">
     {{_R("dialog-header", "Route Policy Setup")}}
     <div>
         {% if (error) { %}<div class="pw-notice pw-notice-error"><b>{{error}}</b></div>{% } else if (message) { %}<div class="pw-notice pw-notice-ok">{{message}}</div>{% } %}
-        <div class="cols"><div><div class="o">Runtime decision</div><div class="m">{{status && status.message || "No SLA status is available"}}</div></div><div style="flex:0;text-align:right"><div>{{status && status.active || active}}</div><div class="m">{{status && status.selected_bin || "unknown"}}</div></div></div>
         <div class="cols"><div><div class="o">WAN 1 transport</div><div class="m">AREDN Wi-Fi client mode still uses logical interface wan and private table 101</div></div><div style="flex:0;text-align:right"><div>{{wifiWan.label}}</div><div class="m">{{wifiWan.active ? wifiWan.device : "br-wan"}}</div></div></div>
         <form id="wan-policy-form">
             <div class="cols"><div><div class="o">Enable PollyWAN</div><div class="m">Disabled installation is inert and leaves ordinary AREDN networking and GPS untouched</div></div><div style="flex:0"><input type="checkbox" name="enabled" {{enabled ? "checked" : ""}}></div></div>
@@ -171,9 +157,7 @@ for (let i = 1; i <= 4; i++) push(priorities, uciMesh.get("aredn", "multiwan", `
             <div class="cols"><div><div class="o">Resume offering a recovered route to the mesh</div><div class="m">Require N successful observations and N seconds before republishing table 28 after an outage.</div></div><div style="flex:0;white-space:nowrap"><input name="mesh_export_recover_count" type="number" min="1" max="10" size="3" value="{{uciMesh.get("aredn", "multiwan", "mesh_export_recover_count") || 3}}"> successes / <input name="mesh_export_hold_down" type="number" min="0" max="3600" size="5" value="{{uciMesh.get("aredn", "multiwan", "mesh_export_hold_down") || 60}}"> seconds</div></div>
         </form>
         <div class="pw-actions pw-policy-actions"><button type="button" hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-include="#wan-policy-form" hx-vals='{"action":"save"}'>Save and apply policy</button><button type="button" hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-vals='{"action":"evaluate"}'>Evaluate now</button></div>
-        <div class="pw-notice">Use <b>Save and apply policy</b> to activate these settings. <b>Done</b> only closes this window and does not save or apply changes.</div>
         {{_H("The configured connection order is authoritative: speed never reorders routes. A local route must pass its source-bound HTTPS health check and the minimum data-rate policy. Remote Mesh WAN is eligible only when enabled and an AREDN/Babel default exists in table 22. Failover to the next eligible route is immediate after the failure threshold; returning to a recovered higher-priority route uses the configured success count and hold-down. A remote default is never copied into table 28.")}}
-        {% if (length(candidates)) { %}<hr><div class="cols">{% for (let i = 0; i < length(candidates); i++) { const c = candidates[i]; %}<div><div class="t">{{routeLabel(c.name)}} — {{c.configured ? (c.selection_healthy ? "Eligible" : "Unavailable") : "Disabled"}}</div><div class="s">{{c.name === "mesh" ? "Exit node " + (status && status.remote_mesh_exit_node || "unknown") : (c.mbps ? sprintf("%.1f Mbps", c.mbps) : "Data rate not measured")}} &middot; {{c.probe_reason || c.reason}}</div></div>{% } %}</div>{% } %}
     </div>
     {{_R("dialog-footer", "nocancel")}}
     <script>(function(){ {{_R("open")}} htmx.on("#dialog-done", "click", _ => htmx.ajax("GET", "/a/u-wan-policy", { target: "#wan-policy", swap: "outerHTML" })); })();</script>

@@ -53,8 +53,8 @@ Do not silently change the audit baseline during an r29 test cycle.
 3. On stable `4.26.7.0`, retain the r28 route contract and all r28 GUI,
    telemetry, damping, XLink, and Cancel behavior.
 4. Keep the preserved stable release at `0.1.0-r29`; corrective work uses APK
-   version `0.1.0.29.5-r1` for product release R29.5 while it is reviewed,
-   built, and validated on stable firmware.
+   version `0.1.0.29.5` with successive integer APK package revisions while
+   product release R29.5 is reviewed, built, and validated on stable firmware.
 5. Run standalone verification, integration synchronization/check, and
    integration verification. Record root-only verification as pending unless it
    actually succeeds.
@@ -117,6 +117,25 @@ are not part of the published R29 APK.
   of a Remote Mesh WAN exit nodename remains to be exercised when such an exit
   is reachable. The no-exit live state and positive/negative resolver mocks
   pass.
+
+### R29.5 r2 UI checkpoint
+
+- The Route Policy Setup dialog keeps its explicit `Save and apply policy`
+  control but removes the redundant explanation about the footer `Done`
+  button. Runtime decision and candidate telemetry live on the dashboard
+  instead of inside the configuration dialog.
+- The Remote Mesh WAN dashboard card now owns its exit-node, candidate,
+  eligibility, controller-decision, route, and last-update status details.
+- The dashboard header reports one current operating state derived from real
+  controller signals. It covers disabled, starting, evaluating, paused, port
+  change pending, failure pending, failed over, recovery pending, recovered,
+  healthy, degraded, no eligible WAN, configuration error, and stale status.
+- Route Policy Setup and Connection Speed Test use the same wide dialog layout
+  as hAP Ports & XLinks. Speed-test refreshes update only the dialog body and
+  preserve its vertical scroll position.
+- These changes advance the test APK to `0.1.0.29.5-r2`. Standalone checks,
+  stable-tree synchronization/build, and independent live upgrade validation
+  on hub5 and KP4DJT remain required before this checkpoint is complete.
 
 ### Ordered Route Policy Setup
 
