@@ -148,8 +148,28 @@ are not part of the published R29 APK.
 - The resolver mock uses a realistic multi-section hosts file with the wanted
   exit after an unrelated node, preventing regression to the first-section
   behavior.
-- This correction advances the test APK to `0.1.0.29.5-r3`; stable build and
-  two-node replacement validation remain required.
+- Stable AREDN `4.26.7.0` build from source commit `a01d57d` completed for
+  `ipq40xx/mikrotik`, architecture `arm_cortex-a7_neon-vfpv4`, kernel
+  `6.12.94`. The 66,140-byte artifact is
+  `aredn-multiwan-0.1.0.29.5-r3.apk`, SHA-256
+  `40f7950b08d081e41b839761707ff394f36588aaea628a1c12583fedcf55d55f`.
+- Standalone verification, synchronized integration verification, package
+  simulation, metadata inspection, and the multi-section resolver mock pass.
+  The root-only port-manager, route-cache, and tunnel-guard chroot mocks remain
+  pending because the build account does not have passwordless sudo.
+- Both hAP ac2 nodes upgraded independently from r2 to r3 with PollyWAN still
+  enabled, port-role management and WAN3 still disabled, and their complete
+  setup/radio, XLink, PollyWAN, Mesh WAN, and GPS invariance snapshots unchanged.
+  Both controllers are running with WAN1 healthy and active.
+- KP4DJT now reports the live table-22 exit as `KP4DJT-hAPac3-home`, origin
+  `10.77.51.13`, next hop `169.254.225.156` over `br-dtdlink`, proving the exit
+  nodename path in installed telemetry. Its GPS process and `/dev/ttyACM0`
+  device remain present. Hub5 currently has no table-22 default and correctly
+  reports no Remote Mesh exit.
+- Checksummed pre-r3 backups are stored separately on MSE-88 at
+  `/home/mat/pollywan-backups/KJ6DZB-WSB-hub5/20260821T052504Z-r29.5-r3-preupgrade`
+  and
+  `/home/mat/pollywan-backups/KP4DJT-HAP-AC2-VAN/20260821T052504Z-r29.5-r3-preupgrade`.
 
 ### Ordered Route Policy Setup
 
