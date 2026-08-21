@@ -63,6 +63,33 @@ Do not silently change the audit baseline during an r29 test cycle.
 8. After r29 validation, freeze a fresh authoritative nightly commit and begin
    r30. Do not mix the nightly source adaptation into the stable r29 APK.
 
+## r29.5 follow-up list
+
+### Preserve and verify initialization
+
+Live validation on `KP4DJT-HAP-AC2-VAN` found the R29 APK registered as
+installed while the expected `aredn.multiwan` UCI section was absent and the
+service was inactive. Running the packaged initializer again created the
+section successfully with `enabled=0`.
+
+The package currently stores its section inside `/etc/config.mesh/aredn`.
+AREDN can regenerate that file after installation, so a later configuration
+save may discard the package-owned section. R29.5 must:
+
+- make the post-install initializer fail when any required UCI write or commit
+  fails instead of returning success unconditionally;
+- verify after installation that `aredn.multiwan` exists and contains all
+  required defaults;
+- preserve the section across AREDN configuration regeneration, or move
+  package-owned state to a dedicated persistent UCI config with a compatible
+  migration;
+- add an idempotent repair path for an installed package whose section is
+  missing;
+- test first install, reinstall, firmware/config regeneration, reboot, and
+  uninstall on both hAP ac2 validation nodes;
+- keep repair and migration disabled by default and prove they do not change
+  radios, ports, GPS, WAN routes, time/location, or USB power.
+
 ## Native WAN manager direction
 
 AREDN stable `4.26.7.0` does not contain the new native `wan_monitor.uc`, so the
