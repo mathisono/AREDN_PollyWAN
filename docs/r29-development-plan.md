@@ -70,7 +70,17 @@ Do not silently change the audit baseline during an r29 test cycle.
 Live validation on `KP4DJT-HAP-AC2-VAN` found the R29 APK registered as
 installed while the expected `aredn.multiwan` UCI section was absent and the
 service was inactive. Running the packaged initializer again created the
-section successfully with `enabled=0`.
+section only after its conflicting runtime commit was removed, with
+`enabled=0`.
+
+The failure was reproduced under shell tracing. The initializer stages defaults
+through `uci -c /etc/config.mesh`, but `cleanup_old_proxy_state()` then runs
+`uci commit aredn` against the runtime configuration. On AREDN that commit
+synchronizes runtime state back over the mesh configuration and erases the
+staged `multiwan` defaults before the final mesh commit. The script nevertheless
+returns zero. The R29 GUI then cannot save Enable because its `uciMesh` handler
+assumes the missing `aredn.multiwan` section already exists and does not report
+set or commit failures.
 
 The package currently stores its section inside `/etc/config.mesh/aredn`.
 AREDN can regenerate that file after installation, so a later configuration
@@ -78,8 +88,16 @@ save may discard the package-owned section. R29.5 must:
 
 - make the post-install initializer fail when any required UCI write or commit
   fails instead of returning success unconditionally;
+- remove or reorder the runtime `uci commit aredn` in
+  `cleanup_old_proxy_state()` so it cannot overwrite staged mesh defaults, and
+  add a regression test for this exact commit-order failure;
 - verify after installation that `aredn.multiwan` exists and contains all
   required defaults;
+- make every GUI save handler create or repair the `multiwan` section before
+  setting options, verify the mesh commit, and show a visible error when a set,
+  commit, or apply operation fails;
+- verify the saved persistent value is synchronized to runtime before starting
+  or restarting PollyWAN services;
 - preserve the section across AREDN configuration regeneration, or move
   package-owned state to a dedicated persistent UCI config with a compatible
   migration;
