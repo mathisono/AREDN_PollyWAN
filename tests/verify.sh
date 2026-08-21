@@ -1,5 +1,5 @@
 #!/bin/sh
-# Static and disposable-mock verification for the standalone PollyWAN r29 source.
+# Static and disposable-mock verification for the standalone PollyWAN r29.5 source.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -86,7 +86,7 @@ done
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
 require_text Makefile 'PKG_VERSION:=0.1.0'
-require_text Makefile 'PKG_RELEASE:=29'
+require_text Makefile 'PKG_RELEASE:=29.5'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -304,7 +304,7 @@ require_text "$SLA" 'Ordered policy selected Remote Mesh WAN'
 require_text "$SLA" 'candidate_rank'
 require_text "$SLA" 'wan1_transport'
 require_text "$SLA" 'TELEMETRY_FILE="$STATE_DIR/telemetry.json"'
-require_text "$SLA" 'PACKAGE_VERSION=0.1.0-r29'
+require_text "$SLA" 'PACKAGE_VERSION=0.1.0-r29.5'
 require_text "$SLA" '"schema_version":1'
 require_text "$SLA" 'active_upstream_reachable'
 require_text "$SLA" 'mesh_exported'
@@ -394,6 +394,8 @@ require_text files/app/main/status/e/link-calibration.ut 'Expired'
 require_text files/app/main/status/e/link-calibration.ut 'last.valid === true'
 require_text files/app/main/status/e/link-calibration.ut 'Remote Mesh WAN'
 require_text files/app/main/status/e/link-calibration.ut 'Status only — speed is measured at the remote exit node'
+require_text files/app/partial/link-calibration.ut 'Remote Mesh WAN'
+require_text files/app/partial/link-calibration.ut 'No table 22 route'
 require_text files/app/partial/wan-policy.ut 'Exit node'
 require_text files/app/partial/wan-policy.ut 'remote_mesh_exit_node'
 require_text files/app/main/status/e/wan-policy.ut 'private table 101'
@@ -419,6 +421,7 @@ reject_text files/app/main/status/e/wan-policy.ut '>Manual<'
 reject_text files/app/main/status/e/wan-policy.ut '>Automatic<'
 require_text files/app/partial/wan-policy.ut 'Ordered failover'
 require_text files/app/partial/multiwan-page.ut 'runtimeState(enabled, status)'
+require_text files/app/partial/multiwan-page.ut 'status.active_health === "healthy"'
 require_text files/app/partial/multiwan-page.ut 'Disabled", "Idle", "Checking", "Healthy", "Degraded", "Holding", "Failing over", "No eligible WAN'
 require_text files/app/partial/multiwan-page.ut 'pw-state-current'
 require_text files/app/partial/multiwan-page.ut 'pw-state-inactive'
@@ -597,15 +600,16 @@ require_text files/usr/local/bin/wan-route-cache 'function cidr_prefix'
 require_text files/usr/local/bin/wan-route-cache 'connected_prefix_from_cidr "$cidr"'
 
 python3 - <<'PY'
-import json, subprocess
-raw = subprocess.check_output(['sh', 'files/www/cgi-bin/apps/aredn-multiwan/status.json']).decode()
+import json, os, subprocess
+env = dict(os.environ, TELEMETRY_FILE='/tmp/pollywan-verifier-no-telemetry')
+raw = subprocess.check_output(['sh', 'files/www/cgi-bin/apps/aredn-multiwan/status.json'], env=env).decode()
 body = raw.split('\r\n\r\n', 1)[1]
 data = json.loads(body)
 assert data['schema_version'] == 1
-assert data['package_version'] == '0.1.0-r29'
+assert data['package_version'] == '0.1.0-r29.5'
 assert data['remote_mesh_exit_node'] is None
 assert data['remote_mesh_exit_ip'] is None
 assert data['remote_mesh_metric'] is None
 PY
 
-echo 'PollyWAN r29 static and mock verification passed'
+echo 'PollyWAN r29.5 static and mock verification passed'

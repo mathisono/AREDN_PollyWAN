@@ -23,14 +23,17 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current package release is `0.1.0-r29`.
+The current R29.5 test package version is `0.1.0-r29.5`. The latest published
+GitHub release remains `0.1.0-r29` until R29.5 validation is complete.
 
 ## Release files
 
 - `wan` — WAN 1. When an AREDN radio is in client/WAN mode, the existing logical interface `wan` uses `wlan0` or `wlan1`. Otherwise WAN 1 uses administrator-selected hAP Ethernet port(s).
 - `wan2` — WAN 2 on administrator-selected Ethernet port(s).
 - `wan3` — Android USB tether using RNDIS, CDC Ethernet, or CDC NCM when existing kernel USB-network support is available.
-- Remote Mesh WAN remains the Babel-learned default in table 22 and is never treated as a fourth local candidate.
+- Remote Mesh WAN remains the Babel-learned default in table 22. It is an
+  opt-in ordered route candidate, but it is never treated as a local WAN or
+  copied into table 28.
 
 Wi-Fi WAN and Ethernet WAN 1 are mutually exclusive because AREDN gives both the same logical interface name, `wan`. PollyWAN never changes a radio mode; it observes AREDN's existing configuration and prevents an Ethernet WAN-1 assignment while Wi-Fi owns `wan`.
 
@@ -414,7 +417,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r29.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r29.5.apk' -print -exec sha256sum {} \;
 ```
 
 Static verification is not a substitute for exact kernel-ABI checks, disabled-install testing, port rollback testing, or physical hardware validation.

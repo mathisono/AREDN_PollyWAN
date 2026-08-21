@@ -8,7 +8,17 @@ function readResult(name)
     try { return json(status); } catch (_) { return null; }
 }
 function labelClass(c) { return c === "fast" ? "Fast" : c === "medium" ? "Medium" : c === "low" ? "Low" : "Unknown"; }
+function readPolicyStatus()
+{
+    const raw = fs.readfile("/tmp/wan-sla/status.json");
+    if (!raw) return null;
+    try { return json(raw); } catch (_) { return null; }
+}
 const names = [ { name: "wan", label: "WAN 1" }, { name: "wan2", label: "WAN 2" }, { name: "wan3", label: "Android USB tether" } ];
+const policyStatus = readPolicyStatus();
+const meshEnabled = uciMesh.get("aredn", "multiwan", "mesh_enable") === "1";
+const meshAvailable = policyStatus && policyStatus.remote_mesh_default === true;
+const meshExitNode = policyStatus && policyStatus.remote_mesh_exit_node || "Unknown exit node";
 %}
 <section id="link-calibration" class="ctrl pw-card pw-card-wide pw-card-clickable" hx-get="status/e/link-calibration" hx-target="#ctrl-modal" hx-swap="innerHTML" tabindex="0" aria-labelledby="pw-cal-title">
     <div class="pw-card-head"><h2 id="pw-cal-title">Connection speed test</h2><span class="pw-configure">Configure</span></div>
@@ -22,5 +32,11 @@ const names = [ { name: "wan", label: "WAN 1" }, { name: "wan2", label: "WAN 2" 
             <div class="pw-muted">{{r && r.valid ? ((r.colo || r.remote_node || "") + " " + (r.public_ip || "")) : "Unknown class"}}</div>
         </div>
         {% } %}
+        <div class="pw-tile">
+            <strong>Remote Mesh WAN</strong>
+            <div>{{!meshEnabled ? "Disabled" : meshAvailable ? (policyStatus.active === "mesh" ? "Active" : "Available standby") : "Unavailable"}}</div>
+            <div class="pw-muted">Exit node: {{meshAvailable ? meshExitNode : "No table 22 route"}}</div>
+            <div class="pw-muted">{{meshAvailable ? ((policyStatus.remote_mesh_exit_ip || "Origin unknown") + " · metric " + (policyStatus.remote_mesh_metric || "unknown")) : "Status only; no local speed test"}}</div>
+        </div>
     </div>
 </section>

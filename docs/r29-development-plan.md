@@ -52,8 +52,8 @@ Do not silently change the audit baseline during an r29 test cycle.
    firewall, Babel, LQM, ports, UCode, OpenWrt, kernel, and APK packaging.
 3. On stable `4.26.7.0`, retain the r28 route contract and all r28 GUI,
    telemetry, damping, XLink, and Cancel behavior.
-4. Keep the development package at `0.1.0-r29` while the preserved work is
-   reviewed, built, and validated on stable firmware.
+4. Keep the preserved stable release at `0.1.0-r29`; corrective work is versioned
+   `0.1.0-r29.5` while it is reviewed, built, and validated on stable firmware.
 5. Run standalone verification, integration synchronization/check, and
    integration verification. Record root-only verification as pending unless it
    actually succeeds.
@@ -68,6 +68,19 @@ Do not silently change the audit baseline during an r29 test cycle.
 Development for these corrective changes continues on `release/r29.5`. The
 explicit Ethernet and Selection Policy apply controls are R29.5 changes; they
 are not part of the published R29 APK.
+
+### R29.5 pre-build checkpoint
+
+- explicit Save/apply controls and visible `Done` warnings are implemented;
+- ordered local/Remote Mesh WAN routing and recovery damping are implemented;
+- Remote Mesh WAN exit-node telemetry is present in the dashboard and both the
+  Connection Speed Test card and dialog;
+- the initialization commit-order bug is fixed and required defaults are
+  verified after the persistent commit;
+- package, runtime telemetry, and dashboard versions are aligned at
+  `0.1.0-r29.5`;
+- standalone verification, stable-tree synchronization/build, and independent
+  live validation on both hAP ac2 nodes remain release gates.
 
 ### Ordered Route Policy Setup
 

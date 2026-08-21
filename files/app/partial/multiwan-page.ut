@@ -3,15 +3,16 @@ function labelPath(value) { return value === "wan" ? "WAN 1" : value === "wan2" 
 function readPolicyStatus() { const v = fs.readfile("/tmp/wan-sla/status.json"); if (!v) return null; try { return json(v); } catch (_) { return null; } }
 function runtimeState(enabled, status)
 {
-    // Deterministic dashboard state map: disabled, scheduler/evaluation, active upstream/export health, route transition, then no eligible fallback.
+    // status.json uses the schema-2 active_* field names. Keep this summary
+    // tied to that schema so a healthy route is not mislabeled unavailable.
     if (!enabled) return "Disabled";
     if (!status) return "Idle";
-    if (status.health === "checking" || status.probe_reason === "manual_check") return "Checking";
-    if (status.health === "switching" || status.health === "failover") return "Failing over";
-    if (!status.active) return "No eligible WAN";
-    if (status.upstream_reachable && status.mesh_exported) return "Healthy";
-    if (status.upstream_reachable && !status.export_eligible) return "Holding";
-    if (!status.upstream_reachable && status.selection_healthy) return "Degraded";
+    if (status.probe_reason === "manual_check") return "Checking";
+    if (status.message && index(status.message, "waiting for recovery") >= 0) return "Holding";
+    if (status.message && index(status.message, "fallback candidate failed") >= 0) return "Failing over";
+    if (!status.active || status.active === "none") return "No eligible WAN";
+    if (status.active_health === "healthy") return "Healthy";
+    if (status.active_health === "unhealthy") return "Degraded";
     return "No eligible WAN";
 }
 function runtimeTone(state)
@@ -23,9 +24,9 @@ function runtimeTone(state)
     return "";
 }
 const enabled = uciMesh.get("aredn", "multiwan", "enabled") === "1";
-const active = uciMesh.get("aredn", "multiwan", "active") || "wan";
-const release = "r29.5 development";
 const status = readPolicyStatus();
+const active = status && status.active || uciMesh.get("aredn", "multiwan", "active") || "wan";
+const release = "r29.5";
 const currentRuntime = runtimeState(enabled, status);
 const runtimeStates = [ "Disabled", "Idle", "Checking", "Healthy", "Degraded", "Holding", "Failing over", "No eligible WAN" ];
 %}
