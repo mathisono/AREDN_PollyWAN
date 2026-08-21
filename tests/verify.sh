@@ -85,7 +85,7 @@ done
 
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
-require_text Makefile 'PKG_VERSION:=0.1.0-r29.5'
+require_text Makefile 'PKG_VERSION:=0.1.0.29.5'
 require_text Makefile 'PKG_RELEASE:=1'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
