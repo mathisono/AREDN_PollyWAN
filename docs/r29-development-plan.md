@@ -84,6 +84,40 @@ are not part of the published R29 APK.
 - standalone verification, stable-tree synchronization/build, and independent
   live validation on both hAP ac2 nodes remain release gates.
 
+### R29.5 build and two-node deployment checkpoint
+
+- Review found and corrected two release blockers before the two-node rollout:
+  the dashboard runtime summary was reading schema-1 health fields from
+  schema-2 status, and an APK upgrade started rather than restarted the existing
+  procd instance, leaving the old daemon in memory. Commit `32b67bb` adds the
+  upgrade restart and its static regression guard.
+- Stable AREDN `4.26.7.0` package build completed from source commit `7ec539c`
+  for `ipq40xx/mikrotik`, architecture `arm_cortex-a7_neon-vfpv4`, kernel
+  `6.12.94`. The installable APK is
+  `aredn-multiwan-0.1.0.29.5-r1.apk`, SHA-256
+  `ecc320d8f72ea6eae1cd8766672eaab4eca029c95fb6e889ffdc66dad11d1224`.
+- Standalone and synchronized integration verification pass, including the
+  ordered-route model, Remote Mesh WAN resolver mock, markup/template balance,
+  and status endpoint fallback. The root-only port-manager, route-cache, and
+  tunnel-guard chroot mocks remain pending because the build account does not
+  have passwordless sudo.
+- `KJ6DZB-WSB-hub5` upgraded successfully with PollyWAN still enabled. The APK
+  upgrade replaced the old daemon automatically; live status reports product
+  `0.1.0-r29.5`, ordered mode, WAN 1 healthy and active, and all four candidates
+  including disabled Remote Mesh WAN. Radio modes and port-role opt-in state
+  were preserved.
+- `KP4DJT-HAP-AC2-VAN` upgraded successfully with PollyWAN still disabled. It
+  remains inert with no SLA daemon, managed-port marker, or package-created
+  default route. Its existing WAN default, radio mode, GPS service, and
+  `/dev/ttyACM0` device were preserved.
+- Pre-upgrade backups and checksummed post-upgrade snapshots are stored on
+  MSE-88 under `/home/mat/pollywan-backups/`. The persistent setup/GPS UCI
+  snapshot is byte-for-byte unchanged on both nodes.
+- Neither node currently has a table-22 remote default, so positive live display
+  of a Remote Mesh WAN exit nodename remains to be exercised when such an exit
+  is reachable. The no-exit live state and positive/negative resolver mocks
+  pass.
+
 ### Ordered Route Policy Setup
 
 R29.5 replaces the Manual/Automatic and speed-ranked policy with one ordered
