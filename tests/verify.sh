@@ -17,6 +17,7 @@ files/usr/local/bin/wan-sla
 files/usr/local/bin/wan-tunnel-guard
 files/usr/local/bin/wan-calibrate
 files/usr/local/bin/wan-speed-test
+files/usr/local/bin/wan-mesh-exit
 files/etc/init.d/wan3-manager
 files/etc/hotplug.d/iface/95-wan3-manager
 files/etc/hotplug.d/net/95-wan3-manager
@@ -27,6 +28,7 @@ tests/verify.sh
 tests/mock-port-manager.sh
 tests/mock-route-cache.sh
 tests/mock-tunnel-guard.sh
+tests/mock-mesh-exit.sh
 tools/sync-integration.sh'
 
 REQUIRED='Makefile
@@ -45,6 +47,7 @@ docs/aredn-sysinfo-integration-plan.md
 tools/openclaw-build-test-prompt.md
 tools/sync-integration.sh
 tests/test-selection-model.py
+tests/mock-mesh-exit.sh
 files/app/main/u-multiwan.ut
 files/app/main/u-wan-policy.ut
 files/app/main/u-ethernet-ports.ut
@@ -102,6 +105,7 @@ require_text Makefile 'Package/aredn-multiwan/prerm'
 require_text Makefile 'files/app/partial/multiwan-style.ut'
 require_text Makefile 'files/app/partial/multiwan.ut'
 require_text Makefile 'files/usr/local/bin/wan-speed-test'
+require_text Makefile 'files/usr/local/bin/wan-mesh-exit'
 require_text Makefile 'files/www/cgi-bin/apps/aredn-multiwan/status.json'
 require_text Makefile 'docs/aredn-sysinfo-integration-plan.md'
 reject_text Makefile 'files/app/main/multiwan.ut'
@@ -293,6 +297,8 @@ require_text "$SLA" 'speed_test_interval'
 require_text "$SLA" '/tmp/wan-speed/$name.json'
 require_text "$SLA" 'selection_mode=ordered'
 require_text "$SLA" 'evaluate_mesh_candidate'
+require_text "$SLA" 'remote_mesh_exit_node'
+require_text "$SLA" '/usr/local/bin/wan-mesh-exit'
 require_text "$SLA" 'for slot in 1 2 3 4'
 require_text "$SLA" 'Ordered policy selected Remote Mesh WAN'
 require_text "$SLA" 'candidate_rank'
@@ -386,6 +392,10 @@ require_text files/app/main/status/e/link-calibration.ut 'Estimated Internet-tes
 require_text files/app/main/status/e/link-calibration.ut 'Not tested'
 require_text files/app/main/status/e/link-calibration.ut 'Expired'
 require_text files/app/main/status/e/link-calibration.ut 'last.valid === true'
+require_text files/app/main/status/e/link-calibration.ut 'Remote Mesh WAN'
+require_text files/app/main/status/e/link-calibration.ut 'Status only — speed is measured at the remote exit node'
+require_text files/app/partial/wan-policy.ut 'Exit node'
+require_text files/app/partial/wan-policy.ut 'remote_mesh_exit_node'
 require_text files/app/main/status/e/wan-policy.ut 'private table 101'
 require_text files/app/main/status/e/wan-policy.ut 'Route Policy Setup'
 require_text files/app/main/status/e/wan-policy.ut 'Preferred connection order'
@@ -399,7 +409,7 @@ reject_text files/app/main/status/e/wan-policy.ut '<details class="pw-advanced">
 require_text files/app/main/status/e/wan-policy.ut 'Export recovery observations must be between 1 and 10'
 require_text files/app/main/status/e/wan-policy.ut 'Export recovery hold-down must be between 0 and 3600'
 require_text files/app/main/status/e/wan-policy.ut 'Data rate not measured'
-require_text files/app/main/status/e/wan-policy.ut 'Availability is learned from AREDN table 22'
+require_text files/app/main/status/e/wan-policy.ut 'Exit node'
 require_text files/app/main/status/e/wan-policy.ut 'mesh_export_recover_count'
 require_text files/app/main/status/e/wan-policy.ut 'Save and apply policy'
 require_text files/app/main/status/e/wan-policy.ut 'Route policy could not be saved to persistent AREDN configuration.'
@@ -519,6 +529,7 @@ actual_manifest="$(
 ./tests/mock-port-manager.sh
 ./tests/mock-route-cache.sh
 ./tests/mock-tunnel-guard.sh
+./tests/mock-mesh-exit.sh
 ./tests/test-selection-model.py
 
 python3 - <<'PY'
@@ -592,6 +603,9 @@ body = raw.split('\r\n\r\n', 1)[1]
 data = json.loads(body)
 assert data['schema_version'] == 1
 assert data['package_version'] == '0.1.0-r29'
+assert data['remote_mesh_exit_node'] is None
+assert data['remote_mesh_exit_ip'] is None
+assert data['remote_mesh_metric'] is None
 PY
 
 echo 'PollyWAN r29 static and mock verification passed'

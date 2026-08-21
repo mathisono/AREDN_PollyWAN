@@ -79,6 +79,7 @@ define Package/aredn-multiwan/install
 	$(INSTALL_BIN) ./files/usr/local/bin/wan-tunnel-guard $(1)/usr/local/bin/
 	$(INSTALL_BIN) ./files/usr/local/bin/wan-calibrate $(1)/usr/local/bin/
 	$(INSTALL_BIN) ./files/usr/local/bin/wan-speed-test $(1)/usr/local/bin/
+	$(INSTALL_BIN) ./files/usr/local/bin/wan-mesh-exit $(1)/usr/local/bin/
 
 	$(INSTALL_DIR) $(1)/etc/init.d
 	$(INSTALL_BIN) ./files/etc/init.d/wan3-manager $(1)/etc/init.d/

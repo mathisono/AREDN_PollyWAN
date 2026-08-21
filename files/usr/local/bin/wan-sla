@@ -531,6 +531,15 @@ write_status()
     table22=0; table28=0
     ip -4 route show table "$REMOTE_MESH_TABLE" default | grep -q '^default' && table22=1
     ip -4 route show table 28 default | grep -q '^default' && table28=1
+    mesh_exit_info="$(/usr/local/bin/wan-mesh-exit 2>/dev/null || printf '0|||||\n')"
+    old_ifs="$IFS"; IFS='|'; set -- $mesh_exit_info; IFS="$old_ifs"
+    mesh_exit_available="${1:-0}"
+    mesh_exit_node="${2:-}"
+    mesh_exit_ip="${3:-}"
+    mesh_exit_next_hop="${4:-}"
+    mesh_exit_interface="${5:-}"
+    mesh_exit_metric="${6:-}"
+    if [ "$mesh_exit_available" != 1 ] || [ "$mesh_exit_node" = Unknown ]; then mesh_exit_node=; fi
     mesh_to_wan="$(aredn_wan_get mesh_to_local_wan)"; [ "$mesh_to_wan" = 1 ] || mesh_to_wan=0
     lan_to_mesh="$(aredn_wan_get lan_to_remote_wan)"; [ "$lan_to_mesh" = 1 ] || lan_to_mesh=0
     generated="$(date +%s)"
@@ -569,7 +578,7 @@ write_status()
 
     tmp="$STATUS_FILE.tmp.$$"
     {
-        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":%s,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
+        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":%s,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"remote_mesh_exit_node":%s,"remote_mesh_exit_ip":%s,"remote_mesh_next_hop":%s,"remote_mesh_interface":%s,"remote_mesh_metric":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
             "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" \
             "$(json_escape "$mode")" "$(json_escape "$active")" "$(json_escape "$active_health")" "$active_upstream" "$active_gateway" \
             "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
@@ -579,7 +588,12 @@ write_status()
             "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" \
             "$(json_escape "$selected_bin")" "$(json_escape "$WAN1_TRANSPORT")" "$(json_escape "$message")" \
-            "$table28" "$table22" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            "$table28" "$table22" \
+            "$([ -n "$mesh_exit_node" ] && printf '"%s"' "$(json_escape "$mesh_exit_node")" || printf null)" \
+            "$([ -n "$mesh_exit_ip" ] && printf '"%s"' "$(json_escape "$mesh_exit_ip")" || printf null)" \
+            "$([ -n "$mesh_exit_next_hop" ] && printf '"%s"' "$(json_escape "$mesh_exit_next_hop")" || printf null)" \
+            "$([ -n "$mesh_exit_interface" ] && printf '"%s"' "$(json_escape "$mesh_exit_interface")" || printf null)" \
+            "$(json_number_or_null "$mesh_exit_metric")" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         first=1
         while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
             [ "$first" = 1 ] || printf ','
@@ -611,7 +625,7 @@ write_status()
     active_next="$(cat "$STATE_DIR/next-probe.$active" 2>/dev/null || true)"; valid_uint "$active_next" || active_next=null
     ttmp="$TELEMETRY_FILE.tmp.$$"
     {
-        printf '{"schema_version":1,"package_version":"%s","enabled":%s,"mode":"%s","active":%s,"health":"%s","gateway_reachable":%s,"upstream_reachable":%s,"selection_healthy":%s,"export_eligible":%s,"device":%s,"source":%s,"gateway":%s,"private_table":%s,"selected_table":%s,"mesh_exported":%s,"export_table":28,"probe_endpoint":%s,"probe_reason":"%s","next_probe_epoch":%s,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"candidates":[' \
+        printf '{"schema_version":1,"package_version":"%s","enabled":%s,"mode":"%s","active":%s,"health":"%s","gateway_reachable":%s,"upstream_reachable":%s,"selection_healthy":%s,"export_eligible":%s,"device":%s,"source":%s,"gateway":%s,"private_table":%s,"selected_table":%s,"mesh_exported":%s,"export_table":28,"probe_endpoint":%s,"probe_reason":"%s","next_probe_epoch":%s,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"remote_mesh_exit_node":%s,"remote_mesh_exit_ip":%s,"remote_mesh_next_hop":%s,"remote_mesh_interface":%s,"remote_mesh_metric":%s,"candidates":[' \
             "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" "$(json_escape "$mode")" \
             "$(case "$active" in wan|wan2|wan3|mesh) printf '"%s"' "$active" ;; *) printf null ;; esac)" \
             "$(json_escape "$health")" "$active_gateway" "$active_upstream" "$active_selection_healthy" "$active_export_eligible" \
@@ -621,7 +635,12 @@ write_status()
             "$active_private_table" "$selected_route_table" \
             "$([ "$table28" = 1 ] && echo true || echo false)" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" "$active_next" \
-            "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated"
+            "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
+            "$([ -n "$mesh_exit_node" ] && printf '"%s"' "$(json_escape "$mesh_exit_node")" || printf null)" \
+            "$([ -n "$mesh_exit_ip" ] && printf '"%s"' "$(json_escape "$mesh_exit_ip")" || printf null)" \
+            "$([ -n "$mesh_exit_next_hop" ] && printf '"%s"' "$(json_escape "$mesh_exit_next_hop")" || printf null)" \
+            "$([ -n "$mesh_exit_interface" ] && printf '"%s"' "$(json_escape "$mesh_exit_interface")" || printf null)" \
+            "$(json_number_or_null "$mesh_exit_metric")"
         first=1
         while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
             [ "$first" = 1 ] || printf ','

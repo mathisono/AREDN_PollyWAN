@@ -85,6 +85,13 @@ toggle. It retains only settings useful to the routing decision: enabled
 routes, route order, clear local and mesh-sharing data-rate floors, health URLs
 and timing, recovery damping, and local-route mesh export.
 
+Remote Mesh WAN status in R29.5 resolves the originator ID of the installed
+Babel table-22 default to the originating node's primary address and AREDN node
+name. The dashboard shows that exit node, origin address, next hop, interface,
+and route availability. Connection Speed Test includes a read-only Remote Mesh
+WAN row with the same exit status; it does not claim that a local speed test can
+measure the remote gateway's own Internet link.
+
 ### Preserve and verify initialization
 
 Live validation on `KP4DJT-HAP-AC2-VAN` found the R29 APK registered as

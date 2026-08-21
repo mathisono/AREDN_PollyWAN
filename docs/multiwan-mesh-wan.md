@@ -21,6 +21,12 @@ responsible for choosing the remote gateway in table 22. R29.5 nevertheless
 exposes Remote Mesh WAN as an enabled ordered route so it can appear anywhere
 in the same preference list as `wan`, `wan2`, and `wan3`.
 
+For display and telemetry, PollyWAN reads Babel's installed default-route
+originator ID and correlates it with the originator's primary `/32` route and
+AREDN's `/var/run/arednlink/hosts` data. This reports the WAN exit node rather
+than merely the immediate next-hop neighbor. If the name data is not yet
+available, routing continues normally and the UI reports an unknown exit node.
+
 ## AREDN routing tables
 
 | Table | Purpose |

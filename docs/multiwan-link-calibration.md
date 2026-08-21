@@ -30,6 +30,12 @@ Remote Mesh WAN has no local speed class and is eligible when its table-22
 default is present. Older manual, availability, adaptive, and automatic values
 migrate to `ordered`.
 
+Connection Speed Test shows Remote Mesh WAN as a status-only row. It reports
+whether the table-22 route is disabled, absent, available, or active and names
+the AREDN node that originated the default. Local Cloudflare and iperf3 buttons
+remain limited to WAN 1, WAN 2, and USB because they cannot measure the remote
+exit node's own upstream link from this node.
+
 ## AREDN node-to-node testing
 
 The AREDN node test runs reverse iperf3:

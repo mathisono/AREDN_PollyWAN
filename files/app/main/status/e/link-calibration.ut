@@ -29,6 +29,11 @@ function stateText(item, enabled, ttl)
     return item.message ? "Failed" : "Not tested";
 }
 const interfaces = [ { name: "wan", label: "WAN 1", enabled: uciMesh.get("aredn", "multiwan", "wan_enable") !== "0" }, { name: "wan2", label: "WAN 2", enabled: uciMesh.get("aredn", "multiwan", "wan2_enable") === "1" }, { name: "wan3", label: "Android USB tether", enabled: uciMesh.get("aredn", "multiwan", "wan3_enable") === "1" } ];
+const policyStatus = readJson("/tmp/wan-sla/status.json");
+const meshEnabled = uciMesh.get("aredn", "multiwan", "mesh_enable") === "1";
+const meshAvailable = policyStatus && policyStatus.remote_mesh_default === true;
+const meshExitNode = policyStatus && policyStatus.remote_mesh_exit_node || "Unknown exit node";
+const meshState = !meshEnabled ? "Disabled" : meshAvailable ? (policyStatus.active === "mesh" ? "Active" : "Available standby") : "No table 22 route";
 let method = uciMesh.get("aredn", "multiwan", "speed_test_method") || "cloudflare";
 let payload = uciMesh.get("aredn", "multiwan", "speed_test_payload") || "5000000";
 let ttl = bounded(uciMesh.get("aredn", "multiwan", "speed_result_ttl"), 21600, 900, 86400);
@@ -100,12 +105,14 @@ if (request.env.REQUEST_METHOD === "PUT") {
             <div class="cols"><div><div class="o">iperf3 port / duration</div><div class="m">Reverse mode is used so the result represents data received locally.</div></div><div class="pw-field pw-inline"><input name="speed_iperf_port" type="number" min="1" max="65535" value="{{port}}"><input name="speed_iperf_duration" type="number" min="3" max="60" value="{{duration}}"> s</div></div>
             <div class="cols"><div><div class="o">Payload size / result lifetime</div><div class="m">Estimated Internet-test data use: {{payloadLabel(payload)}} per WAN tested.</div></div><div class="pw-field pw-inline"><select name="speed_test_payload"><option value="1000000" {{payload === "1000000" ? "selected" : ""}}>1 MB</option><option value="5000000" {{payload === "5000000" ? "selected" : ""}}>5 MB</option><option value="10000000" {{payload === "10000000" ? "selected" : ""}}>10 MB</option><option value="20000000" {{payload === "20000000" ? "selected" : ""}}>20 MB</option></select><input name="speed_result_ttl" type="number" min="900" max="86400" value="{{ttl}}"> s</div></div>
         </form>
-        <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"save-speed"}'>Save settings</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test-all","method":"cloudflare"}'>Test all enabled WANs</button></div>
+        <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"save-speed"}'>Save settings</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test-all","method":"cloudflare"}'>Test all enabled local WANs</button></div>
         <hr>
         {% for (let i = 0; i < length(interfaces); i++) { const item = interfaces[i]; const r = resultFor(item.name); const state = stateText(r, item.enabled, ttl); %}
         <div class="cols"><div><div class="o">{{item.label}}</div><div class="m">{{state}}{{r && r.message ? " - " + r.message : ""}}</div></div><div class="pw-result"><div>{{r && r.valid ? sprintf("%.1f Mbps", r.mbps) : state}}</div><div class="m">{{r && r.valid ? (r.class + " " + (r.colo || r.remote_node || "") + " " + (r.public_ip || "")) : "No valid result"}}</div></div><div class="pw-actions pw-actions-tight"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test","interface":"{{item.name}}","method":"cloudflare"}' {{!item.enabled || fs.access("/tmp/wan-speed/.lock") ? "disabled" : ""}}>Test {{item.label}}</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test","interface":"{{item.name}}","method":"iperf3"}' {{!item.enabled || fs.access("/tmp/wan-speed/.lock") ? "disabled" : ""}}>Node test</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML show:none" hx-vals='{"action":"clear","interface":"{{item.name}}"}'>Clear</button></div></div>
         {% if (i + 1 < length(interfaces)) { %}<hr>{% } %}
         {% } %}
+        <hr>
+        <div class="cols"><div><div class="o">Remote Mesh WAN</div><div class="m">{{meshState}} — exit node {{meshExitNode}}</div></div><div class="pw-result"><div>{{meshAvailable ? meshExitNode : meshState}}</div><div class="m">{{meshAvailable ? ((policyStatus.remote_mesh_exit_ip || "origin unknown") + " · metric " + (policyStatus.remote_mesh_metric || "unknown")) : "Availability is learned from AREDN table 22"}}</div></div><div class="pw-actions pw-actions-tight"><span class="pw-muted">Status only — speed is measured at the remote exit node</span></div></div>
     </div>
     {{_R("dialog-footer", "nocancel")}}
     <script>(function(){ {{_R("open")}} htmx.on("#dialog-done", "click", _ => htmx.ajax("GET", "/a/u-link-calibration", { target: "#link-calibration", swap: "outerHTML" })); })();</script>
