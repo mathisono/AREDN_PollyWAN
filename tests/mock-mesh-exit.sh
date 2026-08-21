@@ -7,7 +7,17 @@ mkdir -p "$ROOT/hosts"
 
 printf '%s\n' '#!/bin/sh' 'cat "$MESH_EXIT_DUMP"' > "$ROOT/socat"
 chmod 755 "$ROOT/socat"
-printf '%s\n' '##10.44.55.66##' '10.44.55.66	TEST-MESH-GATEWAY' > "$ROOT/hosts/0"
+# AREDNlink aggregates multiple node sections in one file. Put the exit second
+# so the test rejects a resolver that only checks the first section header.
+printf '%s\n' \
+    '##10.11.22.33##' \
+    '10.11.22.33	OTHER-MESH-NODE' \
+    '10.11.22.34	lan.OTHER-MESH-NODE.local.mesh' \
+    '' \
+    '##10.44.55.66##' \
+    '10.44.55.66	TEST-MESH-GATEWAY' \
+    '10.44.55.67	lan.TEST-MESH-GATEWAY.local.mesh' \
+    > "$ROOT/hosts/0"
 printf '%s\n' \
     'BABEL 1.0' \
     'add route 100 prefix 0.0.0.0/0 from 0.0.0.0/0 installed yes id aa:bb:cc:dd:ee:ff:00:11 metric 384 refmetric 284 via fe80::1 nexthop 10.1.2.3 table 22 if br-dtdlink' \

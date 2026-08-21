@@ -118,7 +118,7 @@ are not part of the published R29 APK.
   is reachable. The no-exit live state and positive/negative resolver mocks
   pass.
 
-### R29.5 r2 UI checkpoint
+### R29.5 r2 UI and live-test checkpoint
 
 - The Route Policy Setup dialog keeps its explicit `Save and apply policy`
   control but removes the redundant explanation about the footer `Done`
@@ -133,9 +133,23 @@ are not part of the published R29 APK.
 - Route Policy Setup and Connection Speed Test use the same wide dialog layout
   as hAP Ports & XLinks. Speed-test refreshes update only the dialog body and
   preserve its vertical scroll position.
-- These changes advance the test APK to `0.1.0.29.5-r2`. Standalone checks,
-  stable-tree synchronization/build, and independent live upgrade validation
-  on hub5 and KP4DJT remain required before this checkpoint is complete.
+- APK `0.1.0.29.5-r2` passed standalone and synchronized checks, built on the
+  stable tree, and upgraded successfully on hub5 and KP4DJT. The live KP4DJT
+  table-22 route exposed a resolver defect: AREDNlink aggregates many node
+  sections in one hosts file, but the r2 resolver inspected only its first
+  section. The routing path remained healthy, but the exit name displayed as
+  unknown, so r2 is not the final R29.5 candidate.
+
+### R29.5 r3 Remote Mesh exit correction
+
+- The exit resolver now evaluates every AREDNlink node section and correlates
+  each primary `/32` with the Babel originator ID of the installed table-22
+  default.
+- The resolver mock uses a realistic multi-section hosts file with the wanted
+  exit after an unrelated node, preventing regression to the first-section
+  behavior.
+- This correction advances the test APK to `0.1.0.29.5-r3`; stable build and
+  two-node replacement validation remain required.
 
 ### Ordered Route Policy Setup
 

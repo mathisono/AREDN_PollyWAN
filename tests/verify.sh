@@ -86,7 +86,7 @@ done
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
 require_text Makefile 'PKG_VERSION:=0.1.0.29.5'
-require_text Makefile 'PKG_RELEASE:=2'
+require_text Makefile 'PKG_RELEASE:=3'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -522,7 +522,7 @@ require_text SYNC_SOURCE 'sync_contract=standalone-root-equals-integration-subtr
 require_text tools/sync-integration.sh 'rsync -rnic --delete --exclude .git'
 
 # No obsolete/broken bootstrap or older release claims.
-if grep -RIn --exclude-dir=.git --exclude=SYNC_SOURCE --exclude=verify.sh -E 'source\.tar\.gz\.b64|chunk-0[0-9]|PKG_RELEASE:=(3|5|6|10|16|25)([^0-9]|$)|PollyWAN r(3|5|6|10|16|25)([^0-9]|$)|0\.1\.0-r(3|5|6|10|16|25)([^0-9]|$)|main contains r3([^0-9]|$)|incomplete source' . >/tmp/pollywan-stale.$$; then
+if grep -RIn --exclude-dir=.git --exclude=SYNC_SOURCE --exclude=verify.sh -E 'source\.tar\.gz\.b64|chunk-0[0-9]|PKG_RELEASE:=(5|6|10|16|25)([^0-9]|$)|PollyWAN r(3|5|6|10|16|25)([^0-9]|$)|0\.1\.0-r(3|5|6|10|16|25)([^0-9]|$)|main contains r3([^0-9]|$)|incomplete source' . >/tmp/pollywan-stale.$$; then
     cat /tmp/pollywan-stale.$$ >&2
     rm -f /tmp/pollywan-stale.$$
     fail 'stale release/bootstrap references remain'
