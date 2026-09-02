@@ -6,7 +6,12 @@
 ./tests/verify.sh
 ```
 
-The verifier checks package boundaries, executable modes, BusyBox shell syntax, metadata/dependencies, administrator-only UI handlers, DSA and swconfig port generation, Wi-Fi WAN ownership, rollback, GPS non-interference, WAN 3 network-only discovery, speed-test bounds, routing-table ownership, Babel guards, tunnel isolation, markup, documentation, and repository-sync metadata.
+The verifier checks package boundaries, executable modes, BusyBox shell syntax,
+metadata/dependencies, administrator-only UI handlers, centralized verified
+configuration ownership, DSA and swconfig port generation, exact pre-apply
+rollback, GPS non-interference, WAN 3 network-only discovery, speed-test bounds,
+routing-table ownership, Babel guards, tunnel isolation, markup, documentation,
+and repository-sync metadata.
 
 Static success is not an APK build or physical-node pass.
 
@@ -26,7 +31,7 @@ make MAINTARGET=ath79 SUBTARGET=mikrotik prepare
 grep '^CONFIG_PACKAGE_aredn-multiwan=m$' openwrt/.config
 make -C openwrt package/aredn-multiwan/clean V=sc -j1
 make -C openwrt package/aredn-multiwan/compile V=sc -j1 2>&1 | tee /tmp/pollywan-r29.5-build.log
-find openwrt/bin -name 'aredn-multiwan-0.1.0.29.5-r4.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0.29.5-r7.apk' -print -exec sha256sum {} \;
 ```
 
 If matching kernel-module APKs are unavailable, build the full exact target. Never mix architecture, firmware, or kernel ABI.
@@ -55,7 +60,7 @@ ip -4 route show table main > /tmp/pollywan-before/main
 Install without enabling:
 
 ```sh
-apk add --allow-untrusted /tmp/aredn-multiwan-0.1.0.29.5-r4.apk
+apk add --allow-untrusted /tmp/aredn-multiwan-0.1.0.29.5-r7.apk
 [ "$(uci -c /etc/config.mesh get aredn.multiwan.enabled)" = 0 ]
 [ "$(uci -c /etc/config.mesh get aredn.multiwan.port_roles_enabled)" = 0 ]
 [ "$(uci -c /etc/config.mesh get aredn.multiwan.wan3_enable)" = 0 ]
@@ -119,7 +124,48 @@ Port 5: disabled untagged + DtD VLAN 2 tagged
 USB: WAN 3
 ```
 
-Apply with rollback, reconnect, inspect all logical interfaces, and confirm with the token. Also allow one deliberate management-breaking configuration to time out and prove restoration. Inspect `swconfig` on hAP ac lite.
+Apply, reconnect, inspect all logical interfaces, and confirm with the token.
+Then edit a confirmed managed layout, allow the second apply to time
+out, and prove that its exact preceding managed files and port-role UCI values
+and XLink file return. Finally disable PollyWAN and prove that `enabled` and
+`port_roles_enabled` become `0` while the saved `wan2_enable` and `wan3_enable`
+candidate choices remain unchanged. Inspect `swconfig` on hAP ac lite.
+
+## 5a. GUI persistence and ownership
+
+For Route Policy, Ethernet Roles, USB device selection, and Connection Speed
+Test settings:
+
+1. save a non-default value;
+2. confirm that the success message says the value was verified;
+3. close and reopen the dialog;
+4. verify the exact value with `uci -c /etc/config.mesh get`;
+5. force a mocked set, commit, and read-back failure and confirm that each is
+   displayed as an error, preceding values are restored, and no apply/restart
+   begins;
+6. create an unrelated pending AREDN change and confirm PollyWAN refuses Apply
+   until it is committed or reverted;
+7. after a successful Apply, select Cancel and confirm it cannot restore a stale
+   pre-Apply modal snapshot or create an AREDN-wide pending-change banner.
+
+Confirm that only Route Policy Setup can write `wan_enable`, `wan2_enable`,
+`wan3_enable`, and `mesh_enable`; only Ports & XLinks can write port assignments
+and XLinks; only the USB dialog can write
+`wan3_device`; and only Connection Speed Test can write speed-test settings.
+Confirm that the Ports page exposes no ownership checkbox and that its internal
+`port_roles_enabled` value follows the Route Policy master enable.
+
+For the RapidConfig/reboot path, persist a complete valid role set with
+`enabled=1` while no managed marker exists, restart
+`wan3-manager`, and prove that reconciliation creates the marker and reports
+`ready`. Repeat with an invalid no-LAN role set and prove that reconciliation
+returns an error, leaves AREDN files active, and verifies the flag was reset to
+`0`. During a timed apply, remove the temporary token as a reboot would while
+leaving `/etc/aredn-multiwan-backup/pending`; the next reconcile must restore
+the exact pre-apply files, XLinks, and UCI values and remove the completed
+snapshot. Separately enable from the GUI, restart the service during its live
+confirmation window, and prove the restart neither auto-confirms nor discards
+the rollback token.
 
 ## 6. Candidate-private routing
 

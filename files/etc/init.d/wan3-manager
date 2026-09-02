@@ -32,7 +32,14 @@ start_service()
         return 0
     fi
 
-    /usr/local/bin/wan-port-manager reconcile >/dev/null 2>&1 || true
+    if ! /usr/local/bin/wan-port-manager reconcile >/dev/null 2>&1; then
+        logger -t aredn-multiwan 'Ethernet role reconciliation failed; controller startup stopped'
+        if ! uci_enabled; then
+            /usr/local/bin/wan3-manager disable >/dev/null 2>&1 || true
+            /usr/local/bin/wan-tunnel-guard remove >/dev/null 2>&1 || true
+        fi
+        return 1
+    fi
     /usr/local/bin/wan-route-cache all >/dev/null 2>&1 || true
     /usr/local/bin/wan-tunnel-guard apply >/dev/null 2>&1 || true
     /usr/local/bin/wan3-manager apply >/dev/null 2>&1 || true

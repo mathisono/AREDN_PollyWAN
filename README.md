@@ -23,9 +23,9 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current R29.5 test package uses APK version `0.1.0.29.5-r4`. APK reserves
+The current R29.5 test package uses APK version `0.1.0.29.5-r7`. APK reserves
 `-rN` for its integer package revision, so the product release is represented
-as dotted `PKG_VERSION` components and the package revision is `r4`. The latest
+as dotted `PKG_VERSION` components and the package revision is `r7`. The latest
 published GitHub release remains `0.1.0-r29` until R29.5 validation is complete.
 
 ## Release files
@@ -133,17 +133,25 @@ Use the same **Packages** → **Upload Package** workflow and select the newer A
 ## First-time setup
 
 1. Open the PollyWAN dashboard.
-2. Open **Route Policy Setup**, enable the allowed routes, and arrange all four
-   choices from first preference through last resort.
-3. Choose the preferred connection.
-4. Enable only the WAN candidates you intend to use.
-5. To use Ethernet WAN roles, open **Ethernet ports** and assign the ports.
-6. Select **Apply with rollback**.
-7. Reconnect through a known-good LAN or mesh path.
-8. Select **Confirm working** before the rollback timer expires.
-9. Run speed tests only after health checks show the WANs are working.
+2. Open **Ports & XLinks**, assign each Ethernet port, and select **Apply**.
+   While PollyWAN is disabled this saves and verifies the future layout without
+   taking over the live AREDN ports.
+3. Open **Route Policy Setup**, enable the allowed routes, arrange all four
+   choices from first preference through last resort, and select **Apply**.
+4. Reconnect through a known-good LAN or mesh path.
+5. Open **Ports & XLinks** and select **Confirm** before the rollback timer
+   expires. A timeout restores the disabled master state and exact prior port
+   and XLink configuration.
+6. Run speed tests only after health checks show the WANs are working.
 
 Keep at least one LAN or mesh management path available while changing Ethernet roles.
+
+Configuration ownership is intentionally non-overlapping: Route Policy Setup
+owns the controller and all WAN candidate enable flags; Ethernet Ports owns the
+port/DtD and XLink assignments; Android USB tether owns only
+the USB network-device selection; Connection Speed Test owns only its test
+settings. Every dialog uses the same persistent writer and reports an error
+unless all submitted values match after the `/etc/config.mesh` commit.
 
 ## Local WAN candidates
 
@@ -419,7 +427,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0.29.5-r4.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0.29.5-r7.apk' -print -exec sha256sum {} \;
 ```
 
 Static verification is not a substitute for exact kernel-ABI checks, disabled-install testing, port rollback testing, or physical hardware validation.

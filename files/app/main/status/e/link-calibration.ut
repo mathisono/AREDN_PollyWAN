@@ -1,4 +1,6 @@
 {%
+import * as pollywan from "aredn.pollywan";
+
 const supportedBoards = { "mikrotik,routerboard-952ui-5ac2nd": true, "mikrotik,hap-ac2": true, "mikrotik,hap-ac3": true };
 if (!auth.isAdmin) { response.statusCode = 403; print("Administrator authentication required"); return; }
 if (!supportedBoards[hardware.getBoardModel().id]) { response.statusCode = 404; print("Connection speed test is not available on this device"); return; }
@@ -28,12 +30,24 @@ function stateText(item, enabled, ttl)
     if (item.message && index(item.message, "route") >= 0) return "No route";
     return item.message ? "Failed" : "Not tested";
 }
+function liveMeshExit()
+{
+    const f = fs.popen("/usr/local/bin/wan-mesh-exit 2>/dev/null");
+    if (!f) return { available: false, node: "", nextHop: "", device: "", metric: "" };
+    const parts = split(trim(f.read("all") || ""), "|");
+    f.close();
+    return { available: parts[0] === "1", node: parts[1] === "Unknown" ? "" : parts[1] || "", nextHop: parts[3] || "", device: parts[4] || "", metric: parts[5] || "" };
+}
 const interfaces = [ { name: "wan", label: "WAN 1", enabled: uciMesh.get("aredn", "multiwan", "wan_enable") !== "0" }, { name: "wan2", label: "WAN 2", enabled: uciMesh.get("aredn", "multiwan", "wan2_enable") === "1" }, { name: "wan3", label: "Android USB tether", enabled: uciMesh.get("aredn", "multiwan", "wan3_enable") === "1" } ];
 const policyStatus = readJson("/tmp/wan-sla/status.json");
 const meshEnabled = uciMesh.get("aredn", "multiwan", "mesh_enable") === "1";
-const meshAvailable = policyStatus && policyStatus.remote_mesh_default === true;
-const meshExitNode = policyStatus && policyStatus.remote_mesh_exit_node || "Unknown exit node";
-const meshState = !meshEnabled ? "Disabled" : meshAvailable ? (policyStatus.active === "mesh" ? "Active" : "Available standby") : "No table 22 route";
+const liveMesh = liveMeshExit();
+const meshAvailable = liveMesh.available || (policyStatus && policyStatus.remote_mesh_default === true);
+const meshExitNode = liveMesh.node || (policyStatus && policyStatus.remote_mesh_exit_node) || "Origin not identified";
+const meshNextHop = liveMesh.nextHop || (policyStatus && policyStatus.remote_mesh_next_hop) || "Unknown";
+const meshDevice = liveMesh.device || (policyStatus && policyStatus.remote_mesh_interface) || "Unknown";
+const meshMetric = liveMesh.metric || (policyStatus && policyStatus.remote_mesh_metric) || "Unknown";
+const meshState = meshAvailable ? (!meshEnabled ? "Available (not selected)" : policyStatus && policyStatus.active === "mesh" ? "Active" : "Available standby") : "No advertised exit";
 let method = uciMesh.get("aredn", "multiwan", "speed_test_method") || "cloudflare";
 let payload = uciMesh.get("aredn", "multiwan", "speed_test_payload") || "5000000";
 let ttl = bounded(uciMesh.get("aredn", "multiwan", "speed_result_ttl"), 21600, 900, 86400);
@@ -44,7 +58,7 @@ let message = "";
 let error = "";
 if (request.env.REQUEST_METHOD === "PUT") {
     const action = request.args.action || "";
-    if (action === "save-speed") {
+    if (action === "apply") {
         const nextMethod = allowed(request.args.speed_test_method || "cloudflare", [ "cloudflare", "iperf3" ], "cloudflare");
         const nextPayload = allowed(request.args.speed_test_payload || "5000000", [ "1000000", "5000000", "10000000", "20000000" ], "5000000");
         const nextTtl = bounded(request.args.speed_result_ttl, 21600, 900, 86400);
@@ -53,15 +67,19 @@ if (request.env.REQUEST_METHOD === "PUT") {
         const nextDuration = bounded(request.args.speed_iperf_duration, 10, 3, 60);
         if (!validNode(nextNode)) error = "Remote node may contain only letters, numbers, dots, and dashes";
         else {
-            uciMesh.set("aredn", "multiwan", "speed_test_method", nextMethod);
-            uciMesh.set("aredn", "multiwan", "speed_test_payload", nextPayload);
-            uciMesh.set("aredn", "multiwan", "speed_result_ttl", nextTtl);
-            uciMesh.set("aredn", "multiwan", "speed_node", nextNode);
-            uciMesh.set("aredn", "multiwan", "speed_iperf_port", nextPort);
-            uciMesh.set("aredn", "multiwan", "speed_iperf_duration", nextDuration);
-            uciMesh.commit("aredn");
-            method = nextMethod; payload = nextPayload; ttl = nextTtl; node = nextNode; port = nextPort; duration = nextDuration;
-            message = "Speed-test settings saved";
+            const saved = pollywan.save("speed", {
+                speed_test_method: nextMethod,
+                speed_test_payload: nextPayload,
+                speed_result_ttl: sprintf("%s", nextTtl),
+                speed_node: nextNode,
+                speed_iperf_port: sprintf("%s", nextPort),
+                speed_iperf_duration: sprintf("%s", nextDuration)
+            }, uciMesh);
+            if (!saved.ok) error = saved.error;
+            else {
+                method = nextMethod; payload = nextPayload; ttl = nextTtl; node = nextNode; port = nextPort; duration = nextDuration;
+                message = "Speed-test settings saved and verified";
+            }
         }
     }
     else if (action === "test" || action === "test-all") {
@@ -89,6 +107,12 @@ if (request.env.REQUEST_METHOD === "PUT") {
     }
     else error = "Invalid speed-test action";
 }
+if (request.env.REQUEST_METHOD === "DELETE") {
+    configuration.revertModalChanges();
+    print(_R("changes"));
+    return;
+}
+if (message) configuration.prepareModalChanges();
 %}
 <div class="dialog pollywan-dialog pollywan-wide-page pollywan-scroll-dialog pollywan-speed-page">
     {{_R("dialog-header", "Connection speed test")}}
@@ -105,16 +129,16 @@ if (request.env.REQUEST_METHOD === "PUT") {
             <div class="cols"><div><div class="o">iperf3 port / duration</div><div class="m">Reverse mode is used so the result represents data received locally.</div></div><div class="pw-field pw-inline"><input name="speed_iperf_port" type="number" min="1" max="65535" value="{{port}}"><input name="speed_iperf_duration" type="number" min="3" max="60" value="{{duration}}"> s</div></div>
             <div class="cols"><div><div class="o">Payload size / result lifetime</div><div class="m">Estimated Internet-test data use: {{payloadLabel(payload)}} per WAN tested.</div></div><div class="pw-field pw-inline"><select name="speed_test_payload"><option value="1000000" {{payload === "1000000" ? "selected" : ""}}>1 MB</option><option value="5000000" {{payload === "5000000" ? "selected" : ""}}>5 MB</option><option value="10000000" {{payload === "10000000" ? "selected" : ""}}>10 MB</option><option value="20000000" {{payload === "20000000" ? "selected" : ""}}>20 MB</option></select><input name="speed_result_ttl" type="number" min="900" max="86400" value="{{ttl}}"> s</div></div>
         </form>
-        <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"save-speed"}'>Save settings</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test-all","method":"cloudflare"}'>Test all enabled local WANs</button></div>
+        <div class="pw-actions"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"apply"}'>Apply</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test-all","method":"cloudflare"}'>Test enabled WANs</button></div>
         <hr>
         {% for (let i = 0; i < length(interfaces); i++) { const item = interfaces[i]; const r = resultFor(item.name); const state = stateText(r, item.enabled, ttl); %}
         <div class="cols"><div><div class="o">{{item.label}}</div><div class="m">{{state}}{{r && r.message ? " - " + r.message : ""}}</div></div><div class="pw-result"><div>{{r && r.valid ? sprintf("%.1f Mbps", r.mbps) : state}}</div><div class="m">{{r && r.valid ? (r.class + " " + (r.colo || r.remote_node || "") + " " + (r.public_ip || "")) : "No valid result"}}</div></div><div class="pw-actions pw-actions-tight"><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test","interface":"{{item.name}}","method":"cloudflare"}' {{!item.enabled || fs.access("/tmp/wan-speed/.lock") ? "disabled" : ""}}>Test {{item.label}}</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-include="#speed-test-form" hx-vals='{"action":"test","interface":"{{item.name}}","method":"iperf3"}' {{!item.enabled || fs.access("/tmp/wan-speed/.lock") ? "disabled" : ""}}>Node test</button><button hx-put="{{request.env.REQUEST_URI}}" hx-target="#link-calibration-dialog" hx-select="#link-calibration-dialog" hx-swap="outerHTML show:none" hx-vals='{"action":"clear","interface":"{{item.name}}"}'>Clear</button></div></div>
         {% if (i + 1 < length(interfaces)) { %}<hr>{% } %}
         {% } %}
         <hr>
-        <div class="cols"><div><div class="o">Remote Mesh WAN</div><div class="m">{{meshState}} — exit node {{meshExitNode}}</div></div><div class="pw-result"><div>{{meshAvailable ? meshExitNode : meshState}}</div><div class="m">{{meshAvailable ? ((policyStatus.remote_mesh_exit_ip || "origin unknown") + " · metric " + (policyStatus.remote_mesh_metric || "unknown")) : "Availability is learned from AREDN table 22"}}</div></div><div class="pw-actions pw-actions-tight"><span class="pw-muted">Status only — speed is measured at the remote exit node</span></div></div>
+        <div class="cols"><div><div class="o">Remote Mesh WAN</div><div class="m">{{meshState}}</div></div><div class="pw-result"><div>{{meshAvailable ? meshExitNode : "No table 22 default"}}</div><div class="m">{{meshAvailable ? meshNextHop + " via " + meshDevice + " · metric " + meshMetric : "No remote exit is currently advertised"}}</div></div><div class="pw-actions pw-actions-tight"><span class="pw-muted">Status only — speed is measured at the remote exit node</span></div></div>
     </div>
-    {{_R("dialog-footer", "nocancel")}}
+    {{_R("dialog-footer")}}
     <script>(function(){
         {{_R("open")}}
         const speedPage = htmx.find("#ctrl-modal .pollywan-speed-page");

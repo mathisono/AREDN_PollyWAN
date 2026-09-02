@@ -24,6 +24,11 @@ The package never changes `radio0_mode`, `radio1_mode`, SSID, key, channel, or r
 
 When Wi-Fi owns WAN 1, the port UI removes WAN 1 from every Ethernet selector. WAN 2 remains assignable to Ethernet and WAN 3 remains fixed to USB.
 
+Route Policy Setup is the only page that enables WAN 1, WAN 2, WAN 3, and
+Remote Mesh WAN. The Ports & XLinks page owns untagged roles, DtD choices, and
+normal AREDN XLinks; it has no second ownership switch. Enabling PollyWAN makes
+it own all Ethernet roles. Disabling PollyWAN restores the AREDN port files.
+
 Multiple Ethernet ports may share LAN or a WAN role, but cellular and Starlink must be placed in different roles. At least one Ethernet port must remain LAN. An enabled Ethernet WAN must have an assigned port.
 
 Default Ethernet roles when Wi-Fi does not own WAN 1:
@@ -74,7 +79,17 @@ AREDN PR #2816 uses `br-wifi` for mesh AP/PTP/station radios and keeps that shar
 
 ## Apply and rollback
 
-Saving records UCI choices only. **Apply with rollback**:
+All saved role options pass through the shared PollyWAN configuration writer.
+It refuses to mix a direct PollyWAN Apply with unrelated pending AREDN changes,
+repairs a missing `aredn.multiwan` section, checks the commit, and reads every
+submitted value back from `/etc/config.mesh` before an apply may start. Failed
+commits or read-back checks restore and verify the preceding persistent values.
+
+The page has the standard AREDN **Cancel**, **Done**, and **Apply** controls.
+While PollyWAN is disabled, Apply records and verifies the future port/XLink
+layout without changing live Ethernet ownership. Route Policy Setup is the
+single authoritative master enable. Enabling it stages the disabled state and
+starts the following protected apply:
 
 1. validates the board, radio ownership, LAN count, and WAN role counts
 2. backs up existing AREDN advanced-network include files
@@ -83,7 +98,21 @@ Saving records UCI choices only. **Apply with rollback**:
 5. reloads networking and adds `wan2` to the WAN firewall zone
 6. starts a rollback timer, default 180 seconds
 
-Reconnect through a working LAN or mesh path and select **Confirm working**. Without confirmation, the previous AREDN include files are restored and the network is regenerated.
+Reconnect through a working LAN or mesh path and select **Confirm working**.
+Without confirmation, the exact pre-apply include files, marker, XLink UCI
+file, master enable, and port-role UCI values are restored and the network is
+regenerated. A confirmed managed layout can therefore be edited and rolled
+back without falling all the way back to AREDN defaults.
+
+For non-interactive configuration restore, including RapidConfig, a persisted
+`enabled=1` with no managed marker is an authoritative activation request at
+service reconciliation; the internal `port_roles_enabled` value is reconciled
+to the master automatically. The same validation and persistent recovery
+snapshot are used. This path confirms itself only after `node-setup` and network
+regeneration succeed; otherwise it restores AREDN files, disables the unapplied
+flag, and records an error. If a reboot removes the temporary rollback token
+while its persistent snapshot remains, startup restores and verifies the exact
+pre-apply files and UCI values before continuing.
 
 Touched files are limited to:
 
@@ -96,7 +125,16 @@ Touched files are limited to:
 /etc/aredn_include/swconfig.user
 ```
 
-Backups live under `/etc/aredn-multiwan-backup/ports`. The marker records the transport used when the roles were applied. If a later AREDN radio change moves WAN 1 between Ethernet and Wi-Fi, PollyWAN reports that the roles need review; it does not silently remap ports.
+The long-lived AREDN-default backup lives under
+`/etc/aredn-multiwan-backup/ports`; the per-apply rollback snapshot lives under
+`/etc/aredn-multiwan-backup/pending` only until confirmation or rollback.
+Disabling PollyWAN restores AREDN defaults but does not change the saved WAN2
+or WAN3 candidate choices. Dashboard `ready`/`managed`
+requires both the enable flag and this marker; a saved flag alone is never
+reported as active. The marker records the
+transport used when the roles were applied. If a later AREDN radio change moves
+WAN 1 between Ethernet and Wi-Fi, PollyWAN reports that the roles need review;
+it does not silently remap ports.
 
 Inspect transport and state:
 

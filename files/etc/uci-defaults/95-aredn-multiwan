@@ -58,7 +58,7 @@ set_default speed_threshold_fast 30
 set_default return_to_preferred 1
 set_default calibration_interval 21600
 
-# Ethernet role management is a second explicit opt-in. WAN3 is fixed to USB.
+# Internal Ethernet ownership follows the PollyWAN master enable. WAN3 is USB.
 set_default port_roles_enabled 0
 set_default port_rollback_timeout 180
 set_default port1_role wan

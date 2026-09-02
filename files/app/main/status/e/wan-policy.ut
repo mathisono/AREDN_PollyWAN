@@ -1,4 +1,6 @@
 {%
+import * as pollywan from "aredn.pollywan";
+
 const supportedBoards = {
     "mikrotik,routerboard-952ui-5ac2nd": true,
     "mikrotik,hap-ac2": true,
@@ -32,6 +34,22 @@ function requestedValue(name, fallback)
 {
     return request.args[name] != null ? request.args[name] : fallback;
 }
+function savedRoleCount(wanted)
+{
+    const defaults = { port1: "wan", port2: "lan", port3: "lan", port4: "lan", port5: "off" };
+    let count = 0;
+    for (let i = 1; i <= 5; i++) {
+        const name = `port${i}`;
+        if ((uciMesh.get("aredn", "multiwan", `${name}_role`) || defaults[name]) === wanted) count++;
+    }
+    return count;
+}
+function portManagerMessage()
+{
+    const raw = fs.readfile("/tmp/wan-port-manager/state.json");
+    if (!raw) return "";
+    try { const state = json(raw); return state && state.message || ""; } catch (_) { return ""; }
+}
 function wifiWanInfo()
 {
     const radio0 = uciMesh.get("setup", "globals", "radio0_mode") || "";
@@ -43,11 +61,13 @@ function wifiWanInfo()
 }
 
 const wifiWan = wifiWanInfo();
+const wasEnabled = uciMesh.get("aredn", "multiwan", "enabled") === "1";
 let message = "";
 let error = "";
+let runtimeStarted = false;
 if (request.env.REQUEST_METHOD === "PUT") {
-    const action = request.args.action || "save";
-    if (action === "save") {
+    const action = request.args.action || "apply";
+    if (action === "apply") {
         const enabled = request.args.enabled === "on" ? "1" : "0";
         const minbin = allowed(request.args.selection_min_bin || "low", [ "low", "medium", "fast" ], "low");
         const sharebin = allowed(request.args.mesh_share_min_bin || "medium", [ "low", "medium", "fast" ], "medium");
@@ -78,55 +98,82 @@ if (request.env.REQUEST_METHOD === "PUT") {
         }
         else if (duplicatePriority) error = "Each route must appear exactly once in the preferred connection order.";
         else if (enabled === "1" && !wanEnabled && !wan2Enabled && !wan3Enabled && !meshEnabled) error = "Enable at least one route before enabling PollyWAN.";
+        else if (enabled === "1" && savedRoleCount("lan") < 1) error = "At least one Ethernet port must remain LAN before PollyWAN can be enabled.";
+        else if (enabled === "1" && wifiWan.active && savedRoleCount("wan") > 0) error = `WAN 1 is ${wifiWan.label}; remove WAN 1 from the Ethernet port assignments before enabling PollyWAN.`;
+        else if (enabled === "1" && wanEnabled && !wifiWan.active && savedRoleCount("wan") < 1) error = "WAN 1 is enabled but no Ethernet port is assigned to WAN 1.";
+        else if (enabled === "1" && wan2Enabled && savedRoleCount("wan2") < 1) error = "WAN 2 is enabled but no Ethernet port is assigned to WAN 2.";
         else if (!validHttpsUrl(primaryUrl, true)) error = "Primary probe endpoint must be an HTTPS URL with a host and path.";
         else if (!validHttpsUrl(secondaryUrl, false)) error = "Secondary probe endpoint must be empty or an HTTPS URL with a host and path.";
         else if (int(request.args.mesh_export_recover_count || 3) < 1 || int(request.args.mesh_export_recover_count || 3) > 10) error = "Export recovery observations must be between 1 and 10.";
         else if (int(request.args.mesh_export_hold_down || 60) < 0 || int(request.args.mesh_export_hold_down || 60) > 3600) error = "Export recovery hold-down must be between 0 and 3600 seconds.";
+        else if (enabled === "1" && system("/usr/local/bin/wan-port-manager validate >/tmp/wan-port-manager/policy-validate.log 2>&1") !== 0)
+            error = trim(fs.readfile("/tmp/wan-port-manager/policy-validate.log") || "") || "Ethernet port roles must be valid before PollyWAN can be enabled.";
         else {
-        let writeOk = true;
-        try {
-        uciMesh.set("aredn", "multiwan", "multiwan");
-        uciMesh.set("aredn", "multiwan", "enabled", enabled);
-        uciMesh.set("aredn", "multiwan", "selection_mode", "ordered");
-        uciMesh.set("aredn", "multiwan", "preferred_wan", priorities[0]);
-        uciMesh.set("aredn", "multiwan", "wan_enable", wanEnabled ? "1" : "0");
-        uciMesh.set("aredn", "multiwan", "wan2_enable", wan2Enabled ? "1" : "0");
-        uciMesh.set("aredn", "multiwan", "wan3_enable", wan3Enabled ? "1" : "0");
-        uciMesh.set("aredn", "multiwan", "mesh_enable", meshEnabled ? "1" : "0");
-        for (let i = 0; i < 4; i++) uciMesh.set("aredn", "multiwan", `priority_${i + 1}`, priorities[i]);
-        uciMesh.set("aredn", "multiwan", "selection_min_bin", minbin);
-        uciMesh.set("aredn", "multiwan", "mesh_share_min_bin", sharebin);
-        uciMesh.set("aredn", "multiwan", "health_interval", health);
-        uciMesh.set("aredn", "multiwan", "health_url", primaryUrl);
-        uciMesh.set("aredn", "multiwan", "health_url_secondary", secondaryUrl);
-        uciMesh.set("aredn", "multiwan", "failure_count", failures);
-        uciMesh.set("aredn", "multiwan", "promote_count", promotions);
-        uciMesh.set("aredn", "multiwan", "hold_down", hold);
-        uciMesh.set("aredn", "multiwan", "mesh_export_recover_count", exportRecover);
-        uciMesh.set("aredn", "multiwan", "mesh_export_hold_down", exportHold);
-        uciMesh.set("aredn", "multiwan", "return_to_preferred", "1");
-        uciMesh.set("aredn", "@wan[0]", "mesh_to_local_wan", request.args.mesh_to_local_wan === "on" ? "1" : "0");
-        uciMesh.set("aredn", "@wan[0]", "lan_to_remote_wan", meshEnabled ? "1" : "0");
-        if (uciMesh.commit("aredn") === false) writeOk = false;
-        } catch (_) { writeOk = false; }
+            let stagedActivation = false;
+            if (enabled === "1" && !wasEnabled) {
+                const stageRc = system("/usr/local/bin/wan-port-manager stage >/tmp/wan-port-manager/policy-stage.log 2>&1");
+                if (stageRc !== 0) error = trim(fs.readfile("/tmp/wan-port-manager/policy-stage.log") || "") || "Could not preserve the pre-enable Ethernet configuration";
+                else stagedActivation = true;
+            }
+            const saved = error ? { ok: false, error: error } : pollywan.save("policy", {
+                enabled: enabled,
+                selection_mode: "ordered",
+                preferred_wan: priorities[0],
+                wan_enable: wanEnabled ? "1" : "0",
+                wan2_enable: wan2Enabled ? "1" : "0",
+                wan3_enable: wan3Enabled ? "1" : "0",
+                mesh_enable: meshEnabled ? "1" : "0",
+                priority_1: priorities[0],
+                priority_2: priorities[1],
+                priority_3: priorities[2],
+                priority_4: priorities[3],
+                selection_min_bin: minbin,
+                mesh_share_min_bin: sharebin,
+                health_interval: sprintf("%s", health),
+                health_url: primaryUrl,
+                health_url_secondary: secondaryUrl,
+                failure_count: sprintf("%s", failures),
+                promote_count: sprintf("%s", promotions),
+                hold_down: sprintf("%s", hold),
+                mesh_export_recover_count: sprintf("%s", exportRecover),
+                mesh_export_hold_down: sprintf("%s", exportHold),
+                return_to_preferred: "1",
+                mesh_to_local_wan: request.args.mesh_to_local_wan === "on" ? "1" : "0",
+                lan_to_remote_wan: meshEnabled ? "1" : "0"
+            }, uciMesh);
 
-        if (!writeOk) error = "Route policy could not be saved to persistent AREDN configuration.";
-        else if (enabled === "1") {
-            system("rm -f /tmp/wan-sla/inhibit; /etc/init.d/wan3-manager restart >/dev/null 2>&1 &");
-            message = "PollyWAN policy saved and controller restarted";
+            if (!saved.ok) {
+                if (stagedActivation) system("/usr/local/bin/wan-port-manager restore-stage >/dev/null 2>&1");
+                error = saved.error;
+            }
+            else if (enabled === "1" && !wasEnabled) {
+                const rc = system("(mkdir -p /tmp/wan3; /usr/local/bin/wan-port-manager activate-staged >/tmp/wan3/policy-activate.log 2>&1 && /etc/init.d/wan3-manager restart >>/tmp/wan3/policy-activate.log 2>&1) &");
+                if (rc === 0) { runtimeStarted = true; message = "PollyWAN policy saved and verified; Ethernet ownership is applying with automatic rollback protection"; }
+                else {
+                    system("/usr/local/bin/wan-port-manager restore-stage >/dev/null 2>&1");
+                    error = "Policy was saved and verified, but protected Ethernet activation could not be started";
+                }
+            }
+            else if (enabled === "1") {
+                const rc = system("mkdir -p /tmp/wan3; rm -f /tmp/wan-sla/inhibit; /etc/init.d/wan3-manager restart >/tmp/wan3/policy-restart.log 2>&1");
+                if (rc === 0) message = "PollyWAN policy saved, verified, and controller restarted";
+                else error = portManagerMessage() || "Policy was saved and verified, but the PollyWAN controller could not be restarted";
+            }
+            else {
+                const rc = system("(mkdir -p /tmp/wan-sla /tmp/wan3; touch /tmp/wan-sla/inhibit; /usr/local/bin/wan-port-manager disable; /usr/local/bin/wan3-manager disable; /usr/local/bin/wan-tunnel-guard remove; /etc/init.d/wan3-manager stop) >/tmp/wan3/policy-disable.log 2>&1 &");
+                if (rc === 0) { runtimeStarted = true; message = "PollyWAN policy saved and verified; runtime cleanup started"; }
+                else error = "Policy was saved and verified, but runtime cleanup could not be started";
+            }
         }
-        else {
-            system("mkdir -p /tmp/wan-sla; touch /tmp/wan-sla/inhibit; /usr/local/bin/wan-port-manager disable >/dev/null 2>&1; /usr/local/bin/wan3-manager disable >/dev/null 2>&1; /usr/local/bin/wan-tunnel-guard remove >/dev/null 2>&1; /etc/init.d/wan3-manager stop >/dev/null 2>&1 &");
-            message = "PollyWAN disabled; managed port roles and package-created routing are being removed";
-        }
-        }
-    }
-    else if (action === "evaluate") {
-        system("/usr/local/bin/wan-sla once >/dev/null 2>&1 &");
-        message = "A fresh WAN evaluation was requested";
     }
     else error = "Invalid policy action";
 }
+if (request.env.REQUEST_METHOD === "DELETE") {
+    configuration.revertModalChanges();
+    print(_R("changes"));
+    return;
+}
+if (message && !runtimeStarted) configuration.prepareModalChanges();
 
 const enabled = uciMesh.get("aredn", "multiwan", "enabled") === "1";
 const routeChoices = [
@@ -142,7 +189,6 @@ for (let i = 1; i <= 4; i++) push(priorities, uciMesh.get("aredn", "multiwan", `
     {{_R("dialog-header", "Route Policy Setup")}}
     <div>
         {% if (error) { %}<div class="pw-notice pw-notice-error"><b>{{error}}</b></div>{% } else if (message) { %}<div class="pw-notice pw-notice-ok">{{message}}</div>{% } %}
-        <div class="cols"><div><div class="o">WAN 1 transport</div><div class="m">AREDN Wi-Fi client mode still uses logical interface wan and private table 101</div></div><div style="flex:0;text-align:right"><div>{{wifiWan.label}}</div><div class="m">{{wifiWan.active ? wifiWan.device : "br-wan"}}</div></div></div>
         <form id="wan-policy-form">
             <div class="cols"><div><div class="o">Enable PollyWAN</div><div class="m">Disabled installation is inert and leaves ordinary AREDN networking and GPS untouched</div></div><div style="flex:0"><input type="checkbox" name="enabled" {{enabled ? "checked" : ""}}></div></div>
             <div class="cols"><div><div class="o">Enabled routes</div><div class="m">Only checked routes can be selected. Remote Mesh WAN uses an AREDN/Babel default from table 22.</div></div><div style="flex:0;white-space:nowrap"><label>WAN 1 <input type="checkbox" name="wan_enable" {{uciMesh.get("aredn", "multiwan", "wan_enable") !== "0" ? "checked" : ""}}></label> <label>WAN 2 <input type="checkbox" name="wan2_enable" {{uciMesh.get("aredn", "multiwan", "wan2_enable") === "1" ? "checked" : ""}}></label> <label>USB <input type="checkbox" name="wan3_enable" {{uciMesh.get("aredn", "multiwan", "wan3_enable") === "1" ? "checked" : ""}}></label> <label>Remote Mesh WAN <input type="checkbox" name="mesh_enable" {{uciMesh.get("aredn", "multiwan", "mesh_enable") === "1" ? "checked" : ""}}></label></div></div>
@@ -156,10 +202,10 @@ for (let i = 1; i <= 4; i++) push(priorities, uciMesh.get("aredn", "multiwan", `
             <div class="cols"><div><div class="o">Return to a recovered higher-priority route</div><div class="m">Require N successful observations and wait at least N seconds after the last switch. This produces A → B → C failover and returns C → B → A as routes recover.</div></div><div style="flex:0;white-space:nowrap"><input name="promote_count" type="number" min="1" max="10" size="3" value="{{uciMesh.get("aredn", "multiwan", "promote_count") || 2}}"> successes / <input name="hold_down" type="number" min="0" max="3600" size="5" value="{{uciMesh.get("aredn", "multiwan", "hold_down") || 120}}"> seconds</div></div>
             <div class="cols"><div><div class="o">Resume offering a recovered route to the mesh</div><div class="m">Require N successful observations and N seconds before republishing table 28 after an outage.</div></div><div style="flex:0;white-space:nowrap"><input name="mesh_export_recover_count" type="number" min="1" max="10" size="3" value="{{uciMesh.get("aredn", "multiwan", "mesh_export_recover_count") || 3}}"> successes / <input name="mesh_export_hold_down" type="number" min="0" max="3600" size="5" value="{{uciMesh.get("aredn", "multiwan", "mesh_export_hold_down") || 60}}"> seconds</div></div>
         </form>
-        <div class="pw-actions pw-policy-actions"><button type="button" hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-include="#wan-policy-form" hx-vals='{"action":"save"}'>Save and apply policy</button><button type="button" hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-vals='{"action":"evaluate"}'>Evaluate now</button></div>
-        {{_H("The configured connection order is authoritative: speed never reorders routes. A local route must pass its source-bound HTTPS health check and the minimum data-rate policy. Remote Mesh WAN is eligible only when enabled and an AREDN/Babel default exists in table 22. Failover to the next eligible route is immediate after the failure threshold; returning to a recovered higher-priority route uses the configured success count and hold-down. A remote default is never copied into table 28.")}}
+        <div class="pw-actions pw-policy-actions"><button type="button" hx-put="{{request.env.REQUEST_URI}}" hx-target="#ctrl-modal" hx-swap="innerHTML" hx-include="#wan-policy-form" hx-vals='{"action":"apply"}'>Apply</button></div>
+        {{_H("PollyWAN selects the first healthy enabled route in the configured order.")}}
     </div>
-    {{_R("dialog-footer", "nocancel")}}
+    {{_R("dialog-footer", runtimeStarted ? "nocancel" : "")}}
     <script>(function(){
         {{_R("open")}}
         const form = document.getElementById("wan-policy-form");

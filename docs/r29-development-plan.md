@@ -191,6 +191,94 @@ are not part of the published R29 APK.
 - The r4 APK must pass standalone and synchronized integration verification,
   then demonstrate on KP4DJT that a non-default saved order survives reinstall.
 
+### R29.5 r5 GUI persistence and rollback correction
+
+This checkpoint established the verified writer and exact transaction model;
+its separate port opt-in controls were superseded by r7.
+
+- Every PollyWAN settings dialog now uses one ownership-aware UCode writer. It
+  prepares AREDN change tracking, repairs the `aredn.multiwan` section, checks
+  set/commit results, and verifies every submitted value through a new
+  `/etc/config.mesh` cursor before starting a controller or apply operation.
+- Route Policy Setup is the sole owner of controller and WAN candidate enable
+  flags. Ethernet Roles owns only its opt-in and port/DtD assignments; the USB
+  dialog owns only `wan3_device`; Connection Speed Test owns only speed-test
+  settings. Cross-dialog last-writer-wins behavior is removed.
+- Ethernet apply now performs a checked preflight and surfaces launch or
+  validation errors. The previous configuration is staged before a direct
+  Save-and-Apply write.
+- Timed rollback restores the exact pre-apply managed files, marker, and
+  port-role UCI values. **Restore AREDN defaults** remains a separate operation
+  and no longer silently disables WAN2 or WAN3 policy choices.
+- Static guards cover ownership and verified-write use. The root-only port
+  manager mock now exercises managed-to-managed rollback and preservation of
+  WAN2/WAN3 flags during explicit Ethernet restore.
+
+### R29.5 r6 persistent role reconciliation correction
+
+This checkpoint repaired RapidConfig reconciliation; its separate GUI
+Save/Apply/Restore presentation was superseded by r7.
+
+- Live testing found `port_roles_enabled=1` after a configuration restart while
+  the managed-port marker and files were absent. The dashboard incorrectly
+  translated the saved flag alone into `ready`, and boot reconciliation treated
+  the same mismatch as inactive instead of applying it or reporting an error.
+- **Save roles** now persists and verifies role/DtD choices without changing
+  activation. **Apply with rollback** is the sole GUI enable action and
+  **Restore AREDN defaults** is the sole GUI disable action.
+- A complete non-interactive configuration with `port_roles_enabled=1`, such as
+  a RapidConfig restore, is authoritative during service reconciliation. The
+  manager validates it, preserves the current AREDN files, arms rollback before
+  network regeneration, and confirms only after regeneration succeeds. Invalid
+  or failed first activation is disabled persistently and reported as an error.
+- The per-apply file and UCI snapshot remains persistent while the timer token
+  is temporary. After a reboot or interrupted process loses `/tmp`, reconcile
+  restores and verifies the exact pre-apply values before normal operation. An
+  orphaned enabled/no-marker snapshot is normalized to disabled instead of
+  being displayed as active.
+- The Ethernet dashboard and dialog now require both the persistent enable flag
+  and the managed marker before reporting `ready` or `managed`. The root-only
+  harness covers valid and invalid persisted activation plus interrupted timed
+  and non-interactive recovery.
+
+### R29.5 r7 release-candidate GUI and ownership checkpoint
+
+- All four settings dialogs use standard AREDN **Cancel** and **Done** footer
+  controls plus one explicit **Apply** for their settings. The port dialog is
+  renamed **Ports & XLinks** and uses the native compact port matrix. The
+  redundant WAN ownership, local-candidate policy, and port-management enable
+  controls are removed.
+- Route Policy Setup is the sole authoritative master and candidate-enable
+  page. The Ports & XLinks page owns only port, DtD, and XLink assignments. Its
+  internal `port_roles_enabled` state is synchronized to the master: enabling
+  PollyWAN claims all Ethernet roles and disabling it restores AREDN defaults.
+- A disabled node may save and verify its future port layout, avoiding a setup
+  deadlock when WAN 2 needs a port before the master can be enabled. GUI enable
+  stages the disabled state before committing policy, applies in a timed
+  transaction, and requires confirmation. Timeout restores the exact master
+  enable, role/DtD options, include files, marker, and XLink UCI file. Service
+  restart during the window preserves the pending token instead of
+  auto-confirming it.
+- XLink writes use the same centralized persistent UCode module as PollyWAN
+  settings. The commit is checked and every submitted XLink field is reread
+  through a fresh `/etc/config.mesh` cursor. Any set, commit, verification,
+  validation, or launch error is displayed and restores the staged snapshot.
+- Direct Apply no longer creates a dangling AREDN-wide pending-change snapshot.
+  PollyWAN refuses to mix with pre-existing AREDN pending changes; after a
+  successful non-network Apply it advances the modal Cancel baseline. During a
+  background network apply the footer retains Done but suppresses a stale
+  Cancel action until the protected transaction finishes.
+- Remote Mesh WAN cards query the live table-22 resolver on every render and
+  fall back to a direct table-22 route when Babel control metadata is missing.
+  The dashboard and speed views always show concise state, exit, and path
+  information when an exit is present, even if Remote Mesh WAN is not selected
+  as a route candidate.
+- The controller init script now stops startup when Ethernet reconciliation
+  fails instead of launching the SLA daemon behind an invalid port state. The
+  disposable root harness covers GUI enable timeout, service restart during a
+  pending transaction, XLink rollback, validation rollback, RapidConfig
+  activation, and interruption recovery.
+
 ### Ordered Route Policy Setup
 
 R29.5 replaces the Manual/Automatic and speed-ranked policy with one ordered

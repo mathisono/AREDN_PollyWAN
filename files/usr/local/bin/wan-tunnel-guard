@@ -6,6 +6,7 @@
 set -u
 PATH=/usr/sbin:/usr/bin:/sbin:/bin
 export PATH LC_ALL=C
+IP_BIN="${IP_BIN:-ip}"
 
 STATE_DIR=/tmp/wan-tunnel-guard
 STATE_FILE="$STATE_DIR/devices"
@@ -39,8 +40,8 @@ remove_rule()
 {
     dev="$1"
     valid_device "$dev" || return 0
-    while ip -4 rule del pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1; do :; done
-    while ip -6 rule del pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1; do :; done
+    while "$IP_BIN" -4 rule del pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1; do :; done
+    while "$IP_BIN" -6 rule del pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1; do :; done
 }
 
 install_rule()
@@ -48,13 +49,13 @@ install_rule()
     dev="$1"
     valid_device "$dev" || return 0
     remove_rule "$dev"
-    ip -4 route replace blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
-    ip -6 route replace blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
+    "$IP_BIN" -4 route replace blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
+    "$IP_BIN" -6 route replace blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
     # AREDN IPv4 mesh tables 29/20/21 remain ahead at preferences 10/20/30.
     # The tunnel rule is ahead of local/remote Internet defaults. IPv6 has no
     # AREDN payload route policy, so tunnel IPv6 falls directly into table 99.
-    ip -4 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
-    ip -6 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
+    "$IP_BIN" -4 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
+    "$IP_BIN" -6 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
 }
 
 strip_managed_block()
@@ -112,7 +113,7 @@ apply_guard()
         done < "$STATE_FILE"
     fi
     for dev in $devices; do install_rule "$dev"; done
-    [ -n "$devices" ] || ip -6 route del blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
+    [ -n "$devices" ] || "$IP_BIN" -6 route del blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
     printf '%s\n' "$devices" | sed '/^$/d' > "$STATE_FILE"
 
     base="$STATE_DIR/babel.base.$$"
@@ -154,7 +155,7 @@ remove_guard()
         done < "$STATE_FILE"
     fi
     for dev in $(collect_devices); do remove_rule "$dev"; done
-    ip -6 route del blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
+    "$IP_BIN" -6 route del blackhole default table "$BLACKHOLE_TABLE" >/dev/null 2>&1 || true
     rm -f "$STATE_FILE"
 
     base="$STATE_DIR/babel.base.$$"
@@ -169,9 +170,9 @@ case "${1:-apply}" in
     status)
         printf 'devices=%s\n' "$(tr '\n' ' ' < "$STATE_FILE" 2>/dev/null || true)"
         printf '%s\n' 'IPv4 guards:'
-        ip -4 rule show | grep "^$RULE_PREF:" || true
+        "$IP_BIN" -4 rule show | grep "^$RULE_PREF:" || true
         printf '%s\n' 'IPv6 guards:'
-        ip -6 rule show | grep "^$RULE_PREF:" || true
+        "$IP_BIN" -6 rule show | grep "^$RULE_PREF:" || true
         ;;
     *) echo "usage: $0 {apply|remove|status}" >&2; exit 2 ;;
 esac

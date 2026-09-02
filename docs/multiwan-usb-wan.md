@@ -17,7 +17,8 @@ not run a proxy, redirector, transparent firewall table, or phone-side helper.
 2. Unlock the Android phone.
 3. Open Android hotspot/tethering settings.
 4. Enable USB tethering.
-5. Enable WAN 3 in PollyWAN.
+5. Enable WAN 3 in **Route Policy Setup**. The USB dialog only selects `auto`
+   or a specific USB network interface.
 6. Wait for DHCP.
 7. Verify health before selecting WAN 3.
 
@@ -32,6 +33,10 @@ build.
 
 WAN 1 and WAN 2 remain fully usable when USB host or USB-network support is not
 available.
+
+`wan3_enable` has one owner: Route Policy Setup. Saving the USB device dialog
+cannot enable or disable the candidate, and saving another PollyWAN dialog
+cannot overwrite `wan3_device`.
 
 ## Verification
 

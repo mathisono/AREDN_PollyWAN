@@ -16,8 +16,8 @@
 <p>The optional secondary probe is attempted only after the primary probe fails. The endpoint is tested through the candidate source address with <code>curl --interface "$SOURCE" --proxy ''</code> and is not satisfied through another WAN. Cloudflare speed tests use the same direct source-bound path. Node-to-node iperf3 tests are unchanged.</p>
 <h2>Recovery</h2>
 <p>Use the PollyWAN disable action or remove the package to restore ordinary AREDN WAN behavior. Route rollback restores main, table 26, table 27, and table 28 snapshots after failed selection.</p>
-<h2>hAP Ports &amp; XLinks</h2>
-<p>When PollyWAN Ethernet port-role control is enabled, the hAP Ports &amp; XLinks page replaces AREDN's normal advanced port configuration page for that device.</p>
+<h2>Ports &amp; XLinks</h2>
+<p>The page mirrors AREDN's compact port matrix. It owns port, DtD, and XLink assignments but has no separate ownership switch. Enabling PollyWAN in Route Policy Setup takes ownership of all Ethernet roles; disabling it restores the AREDN port files.</p>
 <p>XLinks remain normal AREDN XLinks. They are stored in the normal xlink UCI configuration and are not Internet WAN candidates.</p>
-<p>Saving Ethernet roles must not remove XLinks. Saving XLinks must not change PollyWAN WAN-role VLAN assignments.</p>
+<p>Apply commits and verifies port roles and XLinks together. A timed rollback restores their exact pre-apply values.</p>
 </body></html>

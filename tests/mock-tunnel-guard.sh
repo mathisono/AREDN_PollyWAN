@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 [ "$(id -u)" = 0 ] || { echo 'SKIP: mock tunnel-guard chroot requires root'; exit 0; }
+if ! command -v chroot >/dev/null 2>&1; then chroot() { busybox chroot "$@"; }; fi
 ROOT_SRC="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 ROOT="${TMPDIR:-/tmp}/pollywan-guard-test.$$"
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
@@ -10,7 +11,7 @@ cp /lib/x86_64-linux-gnu/libresolv.so.2 "$ROOT/lib/x86_64-linux-gnu/"
 cp /lib/x86_64-linux-gnu/libc.so.6 "$ROOT/lib/x86_64-linux-gnu/"
 cp /lib64/ld-linux-x86-64.so.2 "$ROOT/lib64/"
 for cmd in sh awk sed grep cat cp mv rm mkdir rmdir sort cmp chmod printf tr; do ln -s busybox "$ROOT/bin/$cmd"; done
-mknod -m 666 "$ROOT/dev/null" c 1 3
+mknod -m 666 "$ROOT/dev/null" c 1 3 2>/dev/null || { rm -f "$ROOT/dev/null"; : > "$ROOT/dev/null"; chmod 666 "$ROOT/dev/null"; }
 cp "$ROOT_SRC/files/usr/local/bin/wan-tunnel-guard" "$ROOT/usr/local/bin/"
 chmod 755 "$ROOT/usr/local/bin/wan-tunnel-guard"
 cat > "$ROOT/usr/bin/uci" <<'EOF_UCI'
@@ -30,14 +31,14 @@ chmod 755 "$ROOT/usr/bin/uci" "$ROOT/usr/bin/ip" "$ROOT/usr/bin/pidof"
 ln -s /usr/bin/ip "$ROOT/bin/ip"
 printf '# user sentinel\n' > "$ROOT/etc/aredn_include/babel-deny.conf"
 printf '1\n' > "$ROOT/tmp/enabled"
-chroot "$ROOT" /usr/local/bin/wan-tunnel-guard apply
+IP_BIN=/usr/bin/ip chroot "$ROOT" /usr/local/bin/wan-tunnel-guard apply
 grep -F 'rule add pref 45 iif wg-test lookup 99' "$ROOT/tmp/ip.log" >/dev/null
 grep -F 'rule add pref 45 iif tun5 lookup 99' "$ROOT/tmp/ip.log" >/dev/null
 grep -F 'redistribute proto 3 ip 0.0.0.0/0 eq 0 deny' "$ROOT/etc/aredn_include/babel-deny.conf" >/dev/null
 grep -F 'in if wg-test ip 0.0.0.0/0 eq 0 deny' "$ROOT/etc/aredn_include/babel-deny.conf" >/dev/null
 grep -F 'out if tun5 ip ::/0 eq 0 deny' "$ROOT/etc/aredn_include/babel-deny.conf" >/dev/null
 printf '0\n' > "$ROOT/tmp/enabled"
-chroot "$ROOT" /usr/local/bin/wan-tunnel-guard apply
+IP_BIN=/usr/bin/ip chroot "$ROOT" /usr/local/bin/wan-tunnel-guard apply
 grep -F '# user sentinel' "$ROOT/etc/aredn_include/babel-deny.conf" >/dev/null
 ! grep -F 'BEGIN AREDN-MULTIWAN-TUNNEL-GUARD' "$ROOT/etc/aredn_include/babel-deny.conf" >/dev/null
 echo 'mock tunnel guard passed'

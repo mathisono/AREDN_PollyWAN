@@ -7,7 +7,7 @@
 - `wan2` is administrator-selected Ethernet WAN 2.
 - `wan3` is permanently the phone USB RNDIS/CDC input when existing kernel USB-network support is available.
 
-All WAN-1 transports use private table 101. WAN 2 uses table 102 and WAN 3 uses table 103. Port-role application is separate from enabling the SLA controller and has an automatic rollback. PollyWAN observes but never changes AREDN radio mode. A disabled installation has no routing, port, radio, Babel, tunnel, USB, or GPS effect.
+All WAN-1 transports use private table 101. WAN 2 uses table 102 and WAN 3 uses table 103. Route Policy Setup is the authoritative master: enabling it claims the saved Ethernet roles with automatic rollback protection, while disabling it restores AREDN port defaults. PollyWAN observes but never changes AREDN radio mode. A disabled installation has no routing, port, radio, Babel, tunnel, USB, or GPS effect.
 
 ## Two different AREDN WAN concepts
 

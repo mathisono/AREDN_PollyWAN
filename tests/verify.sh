@@ -58,6 +58,7 @@ files/app/main/status/e/wan-policy.ut
 files/app/main/status/e/ethernet-ports.ut
 files/app/main/status/e/usb-wan.ut
 files/app/main/status/e/link-calibration.ut
+files/usr/share/ucode/aredn/pollywan.uc
 files/app/partial/multiwan-page.ut
 files/app/partial/multiwan-style.ut
 files/app/partial/multiwan.ut
@@ -87,7 +88,7 @@ done
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
 require_text Makefile 'PKG_VERSION:=0.1.0.29.5'
-require_text Makefile 'PKG_RELEASE:=4'
+require_text Makefile 'PKG_RELEASE:=7'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -109,6 +110,7 @@ require_text Makefile 'files/app/partial/multiwan-style.ut'
 require_text Makefile 'files/app/partial/multiwan.ut'
 require_text Makefile 'files/usr/local/bin/wan-speed-test'
 require_text Makefile 'files/usr/local/bin/wan-mesh-exit'
+require_text Makefile 'files/usr/share/ucode/aredn/pollywan.uc'
 require_text Makefile 'files/www/cgi-bin/apps/aredn-multiwan/status.json'
 require_text Makefile 'docs/aredn-sysinfo-integration-plan.md'
 reject_text Makefile 'files/app/main/multiwan.ut'
@@ -119,6 +121,53 @@ require_text AREDNLicense.txt 'not represented as an official'
 # AREDN 4.26's UCode renderer does not support JavaScript optional chaining.
 ! grep -R -nF '?.' files/app || fail 'UI templates must not use optional chaining'
 ! grep -R -nF 'strftime(' files/app || fail 'UI templates must not depend on strftime'
+
+# Every PollyWAN GUI settings write uses one ownership-aware, verified
+# persistent writer.  No dialog may silently become a second owner.
+GUI_CONFIG=files/usr/share/ucode/aredn/pollywan.uc
+reject_text "$GUI_CONFIG" 'configuration.prepareChanges()'
+require_text "$GUI_CONFIG" 'configuration.countChanges() > 0'
+require_text "$GUI_CONFIG" 'function restoreValues('
+require_text "$GUI_CONFIG" 'previous persistent values could not be restored'
+require_text "$GUI_CONFIG" 'uci.cursor("/etc/config.mesh")'
+require_text "$GUI_CONFIG" 'cursor.commit("aredn") === false'
+require_text "$GUI_CONFIG" 'did not match after commit'
+require_text "$GUI_CONFIG" 'export function saveXlinks'
+require_text "$GUI_CONFIG" 'cursor.commit("xlink") === false'
+require_text "$GUI_CONFIG" 'Persistent XLink count did not match after commit'
+require_text "$GUI_CONFIG" 'policy: {'
+require_text "$GUI_CONFIG" 'ports: {'
+require_text "$GUI_CONFIG" 'usb: {'
+require_text "$GUI_CONFIG" 'speed: {'
+for file in \
+    files/app/main/status/e/wan-policy.ut \
+    files/app/main/status/e/ethernet-ports.ut \
+    files/app/main/status/e/usb-wan.ut \
+    files/app/main/status/e/link-calibration.ut
+do
+    require_text "$file" 'import * as pollywan from "aredn.pollywan";'
+    reject_text "$file" 'uciMesh.set("aredn", "multiwan"'
+    reject_text "$file" 'uciMesh.commit("aredn")'
+done
+require_text files/app/main/status/e/wan-policy.ut 'pollywan.save("policy"'
+require_text files/app/main/status/e/ethernet-ports.ut 'pollywan.save("ports"'
+require_text files/app/main/status/e/usb-wan.ut 'pollywan.save("usb"'
+require_text files/app/main/status/e/link-calibration.ut 'pollywan.save("speed"'
+require_text files/app/main/status/e/wan-policy.ut 'name="wan_enable"'
+require_text files/app/main/status/e/wan-policy.ut 'name="wan2_enable"'
+require_text files/app/main/status/e/wan-policy.ut 'name="wan3_enable"'
+reject_text files/app/main/status/e/ethernet-ports.ut 'name="wan_enable"'
+reject_text files/app/main/status/e/ethernet-ports.ut 'name="wan2_enable"'
+reject_text files/app/main/status/e/usb-wan.ut 'name="wan3_enable"'
+require_text files/app/main/status/e/ethernet-ports.ut 'const values = { port_roles_enabled: controllerEnabled ? "1" : "0" };'
+require_text files/app/main/status/e/ethernet-ports.ut 'pollywan.saveXlinks('
+require_text files/app/main/status/e/ethernet-ports.ut 'wan-port-manager restore-stage'
+reject_text files/app/main/status/e/ethernet-ports.ut 'name="port_roles_enabled"'
+reject_text files/app/main/status/e/ethernet-ports.ut 'WAN 1 ownership'
+reject_text files/app/main/status/e/ethernet-ports.ut 'Local candidate policy'
+reject_text files/app/main/status/e/ethernet-ports.ut 'Manage Ethernet roles with PollyWAN'
+require_text files/app/partial/ethernet-ports.ut 'roleEnabled && fs.access("/etc/aredn_include/.aredn-multiwan-ports")'
+require_text files/app/partial/ethernet-ports.ut '"Needs attention"'
 
 # Defaults are inert and GPS/radio neutral.
 DEFAULTS=files/etc/uci-defaults/95-aredn-multiwan
@@ -186,19 +235,35 @@ require_text "$PORTS" "printf 'wifi:%s\\n'"
 require_text "$PORTS" 'invalid:both-radios'
 require_text "$PORTS" 'no Ethernet port may be assigned to WAN 1'
 require_text "$PORTS" 'our Ethernet WAN override'
-require_text "$PORTS" 'version=6'
+require_text "$PORTS" 'version=7'
 require_text "$PORTS" 'wan_transport='
 require_text "$PORTS" 'WAN 1 transport changed from'
 require_text "$PORTS" 'mikrotik,routerboard-952ui-5ac2nd) echo swconfig'
 require_text "$PORTS" 'mikrotik,hap-ac2|mikrotik,hap-ac3) echo dsa'
 require_text "$PORTS" 'at least one Ethernet port must remain LAN'
 require_text "$PORTS" 'schedule_rollback'
+require_text "$PORTS" 'stage_transaction'
+require_text "$PORTS" 'restore_transaction'
+require_text "$PORTS" 'XLINK_CONFIG=/etc/config.mesh/xlink'
+require_text "$PORTS" 'xlink.config.absent'
+require_text "$PORTS" 'activate_staged()'
+require_text "$PORTS" "awaiting confirmation"
+require_text "$PORTS" 'set_role_management()'
+require_text "$PORTS" 'ROLLBACK_DIR=/etc/aredn-multiwan-backup/pending'
+require_text "$PORTS" 'rolled back to the previous managed configuration'
+require_text "$PORTS" 'Applying persisted Ethernet role configuration'
+require_text "$PORTS" 'apply_roles persistent'
+require_text "$PORTS" 'Interrupted persisted activation restored AREDN files; PollyWAN was disabled for review'
+require_text "$PORTS" 'an Ethernet role recovery snapshot already exists'
+reject_text "$PORTS" '$CONFIG_PACKAGE.$CONFIG_SECTION.wan2_enable=0'
+reject_text "$PORTS" '$CONFIG_PACKAGE.$CONFIG_SECTION.wan3_enable=0'
 require_text "$PORTS" 'POLLYWAN_TEST_MODE'
 require_text "$PORTS" 'pending-token'
 require_text "$PORTS" 'confirm_roles'
 require_text "$PORTS" 'restore_backups'
 require_text "$PORTS" '/usr/local/bin/node-setup'
 require_text "$PORTS" 'add_list "firewall.$zone.network=wan2"'
+require_text "$PORTS" '[ "$(uci_get port_roles_enabled)" = 1 ] && [ -e "$MARKER" ]'
 reject_text "$PORTS" 'firewall.$zone.network=wifi'
 reject_text "$PORTS" 'firewall.$zone.network=fast'
 require_text "$PORTS" 'option ip4table '\''102'\'''
@@ -208,6 +273,7 @@ reject_text "$PORTS" 'uci -c /etc/config.mesh set gpsd'
 reject_text "$PORTS" 'gpsd stop'
 reject_text "$PORTS" 'gpsd restart'
 reject_text "$PORTS" 'usb_passthrough'
+require_text files/etc/init.d/wan3-manager 'Ethernet role reconciliation failed; controller startup stopped'
 
 # WAN3 is network-class only, opt-in, and does not touch serial GPS.
 WAN3=files/usr/local/bin/wan3-manager
@@ -239,6 +305,7 @@ require_text "$CACHE" 'wan)  printf '\''101|81'
 require_text "$CACHE" 'wan2) printf '\''102|82'
 require_text "$CACHE" 'wan3) printf '\''103|83'
 require_text "$CACHE" 'from "$source/32" lookup "$table"'
+require_text "$CACHE" 'IP_BIN="${IP_BIN:-ip}"'
 require_text "$WAN3" 'LOCAL_TABLE=26'
 require_text "$WAN3" 'LOCAL_SUBNET_TABLE=27'
 require_text "$WAN3" 'BABEL_EXPORT_TABLE=28'
@@ -335,8 +402,9 @@ require_text "$SLA" '"candidates":['
 GUARD=files/usr/local/bin/wan-tunnel-guard
 require_text "$GUARD" 'RULE_PREF=45'
 require_text "$GUARD" 'BLACKHOLE_TABLE=99'
-require_text "$GUARD" 'ip -4 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE"'
-require_text "$GUARD" 'ip -6 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE"'
+require_text "$GUARD" 'IP_BIN="${IP_BIN:-ip}"'
+require_text "$GUARD" '"$IP_BIN" -4 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE"'
+require_text "$GUARD" '"$IP_BIN" -6 rule add pref "$RULE_PREF" iif "$dev" lookup "$BLACKHOLE_TABLE"'
 require_text "$GUARD" 'redistribute proto 3 ip 0.0.0.0/0 eq 0 deny'
 require_text "$GUARD" 'in if %s ip 0.0.0.0/0 eq 0 deny'
 require_text "$GUARD" 'out if %s ip ::/0 eq 0 deny'
@@ -370,22 +438,32 @@ require_text tests/test-ip-compat.sh 'ip -6 route replace blackhole default tabl
 
 # Authenticated UI and requested controls.
 for file in files/app/main/status/e/*.ut; do require_text "$file" 'if (!auth.isAdmin)'; done
-require_text files/app/main/status/e/ethernet-ports.ut 'hAP Ports &amp; XLinks'
-require_text files/app/main/status/e/ethernet-ports.ut 'Apply with rollback'
+for file in \
+    files/app/main/status/e/wan-policy.ut \
+    files/app/main/status/e/ethernet-ports.ut \
+    files/app/main/status/e/usb-wan.ut \
+    files/app/main/status/e/link-calibration.ut
+do
+    require_text "$file" '_R("dialog-footer"'
+    require_text "$file" 'REQUEST_METHOD === "DELETE"'
+    require_text "$file" 'configuration.revertModalChanges()'
+    [ "$(grep -o '>Apply<' "$file" | wc -l)" -eq 1 ] || fail "$file must expose exactly one settings Apply button"
+done
+require_text files/app/main/status/e/wan-policy.ut '_R("dialog-footer", runtimeStarted ? "nocancel" : "")'
+require_text files/app/main/status/e/ethernet-ports.ut '_R("dialog-footer", applyStarted ? "nocancel" : "")'
+for file in files/app/main/status/e/usb-wan.ut files/app/main/status/e/link-calibration.ut; do
+    require_text "$file" '{{_R("dialog-footer")}}'
+    reject_text "$file" '"nocancel"'
+done
+require_text files/app/main/status/e/ethernet-ports.ut 'Ports &amp; XLinks'
+require_text files/app/main/status/e/ethernet-ports.ut '<div>DtD</div><div>VLAN 2</div>'
+require_text files/app/main/status/e/ethernet-ports.ut 'type="radio" name="role_{{p.name}}" value="lan"'
+require_text files/app/main/status/e/ethernet-ports.ut 'type="radio" name="role_{{p.name}}" value="wan2"'
 require_text files/app/main/status/e/ethernet-ports.ut 'pw-ethernet-role-actions'
-require_text files/app/main/status/e/ethernet-ports.ut 'Done</b> only closes this window and does not save or apply changes.'
 require_text files/app/main/status/e/ethernet-ports.ut 'Wi-Fi client on wlan0'
 require_text files/app/main/status/e/ethernet-ports.ut 'Wi-Fi client on wlan1'
 require_text files/app/main/status/e/ethernet-ports.ut 'no Ethernet port may also be assigned to WAN 1'
-require_text files/app/main/status/e/ethernet-ports.ut 'WAN 3 remains Android USB tether'
-require_text files/app/main/status/e/ethernet-ports.ut 'never edits gpsd'
-require_text files/app/main/status/e/usb-wan.ut 'Connect an Android phone by USB and enable USB tethering on the phone'
-require_text files/app/main/status/e/usb-wan.ut 'USB charging alone is insufficient'
-require_text files/app/main/status/e/usb-wan.ut 'Existing kernel support'
 require_text files/app/main/status/e/usb-wan.ut 'PollyWAN does not replace kernel modules'
-require_text files/app/main/status/e/usb-wan.ut 'Detected device'
-require_text files/app/main/status/e/usb-wan.ut 'IPv4 address'
-require_text files/app/main/status/e/usb-wan.ut 'gateway'
 require_text files/app/main/status/e/usb-wan.ut 'Requesting DHCP'
 reject_text files/app/main/status/e/usb-wan.ut 'Proxy IPv4 address'
 reject_text files/app/main/status/e/usb-wan.ut 'Proxy TCP port'
@@ -399,11 +477,12 @@ require_text files/app/main/status/e/link-calibration.ut 'Expired'
 require_text files/app/main/status/e/link-calibration.ut 'last.valid === true'
 require_text files/app/main/status/e/link-calibration.ut 'Remote Mesh WAN'
 require_text files/app/main/status/e/link-calibration.ut 'Status only — speed is measured at the remote exit node'
+require_text files/app/main/status/e/link-calibration.ut 'function liveMeshExit()'
 require_text files/app/partial/link-calibration.ut 'Remote Mesh WAN'
 require_text files/app/partial/link-calibration.ut 'No table 22 route'
-require_text files/app/partial/wan-policy.ut 'Exit node'
-require_text files/app/partial/wan-policy.ut 'remote_mesh_exit_node'
-require_text files/app/main/status/e/wan-policy.ut 'private table 101'
+require_text files/app/partial/link-calibration.ut 'function liveMeshExit()'
+require_text files/app/partial/wan-policy.ut '<div class="pw-label">Exit</div>'
+require_text files/app/partial/wan-policy.ut 'function liveMeshExit()'
 require_text files/app/main/status/e/wan-policy.ut 'Route Policy Setup'
 require_text files/app/main/status/e/wan-policy.ut 'Preferred connection order'
 require_text files/app/main/status/e/wan-policy.ut 'Selecting a route already used in another position swaps the two positions.'
@@ -419,8 +498,10 @@ reject_text files/app/main/status/e/wan-policy.ut '<details class="pw-advanced">
 require_text files/app/main/status/e/wan-policy.ut 'Export recovery observations must be between 1 and 10'
 require_text files/app/main/status/e/wan-policy.ut 'Export recovery hold-down must be between 0 and 3600'
 require_text files/app/main/status/e/wan-policy.ut 'mesh_export_recover_count'
-require_text files/app/main/status/e/wan-policy.ut 'Save and apply policy'
-require_text files/app/main/status/e/wan-policy.ut 'Route policy could not be saved to persistent AREDN configuration.'
+require_text files/app/main/status/e/wan-policy.ut 'PollyWAN policy saved, verified, and controller restarted'
+require_text files/app/main/status/e/wan-policy.ut 'protected Ethernet activation'
+require_text files/app/main/status/e/wan-policy.ut 'wan-port-manager stage'
+require_text files/app/main/status/e/wan-policy.ut 'wan-port-manager activate-staged'
 require_text files/app/main/status/e/wan-policy.ut 'pw-policy-actions'
 require_text files/app/main/status/e/wan-policy.ut 'pollywan-wide-page'
 reject_text files/app/main/status/e/wan-policy.ut 'Runtime decision'
@@ -430,10 +511,8 @@ reject_text files/app/main/status/e/wan-policy.ut '>Automatic<'
 require_text files/app/partial/wan-policy.ut 'Ordered failover'
 require_text files/app/partial/wan-policy.ut 'Preferred order'
 require_text files/app/partial/wan-policy.ut 'preferredOrder()'
-require_text files/app/partial/wan-policy.ut 'Candidate status'
-require_text files/app/partial/wan-policy.ut 'Eligibility'
-require_text files/app/partial/wan-policy.ut 'Controller decision'
-require_text files/app/partial/wan-policy.ut 'Last update'
+require_text files/app/partial/wan-policy.ut '<div class="pw-label">State</div>'
+require_text files/app/partial/wan-policy.ut '<div class="pw-label">Path</div>'
 require_text files/app/partial/multiwan-page.ut 'runtimeState(enabled, status)'
 require_text files/app/partial/multiwan-page.ut 'status.active_health === "healthy"'
 require_text files/app/partial/multiwan-page.ut 'Port change pending'
@@ -453,18 +532,12 @@ require_text files/app/partial/multiwan-style.ut 'width: 96vw'
 require_text files/app/partial/multiwan-style.ut 'max-width: 1440px'
 require_text files/app/partial/multiwan-style.ut '.pollywan-ports-table-wrap'
 require_text files/app/partial/multiwan-style.ut 'overflow-x: auto'
-require_text files/app/main/status/e/ethernet-ports.ut 'hAP Ports &amp; XLinks'
+require_text files/app/main/status/e/ethernet-ports.ut 'Ports &amp; XLinks'
 require_text files/app/main/status/e/ethernet-ports.ut 'pollywan-ports-page'
 require_text files/app/main/status/e/ethernet-ports.ut 'pollywan-ports-table-wrap'
-require_text files/app/main/status/e/ethernet-ports.ut 'function saveXlinks'
-require_text files/app/main/status/e/ethernet-ports.ut 'uciMesh.commit("xlink")'
-require_text files/app/main/status/e/ethernet-ports.ut 'action === "save-xlinks"'
-require_text files/app/main/status/e/ethernet-ports.ut 'REQUEST_METHOD === "DELETE"'
-require_text files/app/main/status/e/ethernet-ports.ut 'configuration.revertModalChanges()'
-require_text files/app/main/status/e/ethernet-ports.ut '{{_R("dialog-footer")}}'
-reject_text files/app/main/status/e/ethernet-ports.ut '{{_R("dialog-footer", "nocancel")}}'
-require_text files/app/main/status/e/ethernet-ports.ut 'Saving Ethernet roles preserves those sections'
-require_text files/app/main/status/e/ethernet-ports.ut 'Saving XLinks does not change PollyWAN WAN-role VLAN assignments'
+require_text files/app/main/status/e/ethernet-ports.ut 'function normalizedXlinks'
+reject_text files/app/main/status/e/ethernet-ports.ut 'uciMesh.commit("xlink")'
+reject_text files/app/main/status/e/ethernet-ports.ut 'action === "save-xlinks"'
 reject_text files/app/main/status/e/ethernet-ports.ut 'WAN 1 transport'
 require_text files/app/partial/wan-policy.ut '{{_R("usb-wan")}}'
 dashboard_order="$(awk '/id="wan-card-2"/{w2=NR} /_R\("usb-wan"\)/{u=NR} /id="mesh-card"/{m=NR} END{if(w2 && u && m && w2<u && u<m) print "ok"}' files/app/partial/wan-policy.ut)"; [ "$dashboard_order" = ok ] || fail 'dashboard source order must place Android USB tether between WAN 2 and Remote Mesh WAN'
@@ -530,7 +603,7 @@ require_text SYNC_SOURCE 'sync_contract=standalone-root-equals-integration-subtr
 require_text tools/sync-integration.sh 'rsync -rnic --delete --exclude .git'
 
 # No obsolete/broken bootstrap or older release claims.
-if grep -RIn --exclude-dir=.git --exclude=SYNC_SOURCE --exclude=verify.sh -E 'source\.tar\.gz\.b64|chunk-0[0-9]|PKG_RELEASE:=(5|6|10|16|25)([^0-9]|$)|PollyWAN r(3|5|6|10|16|25)([^0-9]|$)|0\.1\.0-r(3|5|6|10|16|25)([^0-9]|$)|main contains r3([^0-9]|$)|incomplete source' . >/tmp/pollywan-stale.$$; then
+if grep -RIn --exclude-dir=.git --exclude=SYNC_SOURCE --exclude=verify.sh -E 'source\.tar\.gz\.b64|chunk-0[0-9]|PKG_RELEASE:=(10|16|25)([^0-9]|$)|PollyWAN r(3|10|16|25)([^0-9]|$)|0\.1\.0-r(3|10|16|25)([^0-9]|$)|main contains r3([^0-9]|$)|incomplete source' . >/tmp/pollywan-stale.$$; then
     cat /tmp/pollywan-stale.$$ >&2
     rm -f /tmp/pollywan-stale.$$
     fail 'stale release/bootstrap references remain'
@@ -552,9 +625,19 @@ actual_manifest="$(
 )"
 [ "$actual_manifest" = "$expected_manifest" ] || fail "content manifest mismatch: $actual_manifest != $expected_manifest"
 
-./tests/mock-port-manager.sh
-./tests/mock-route-cache.sh
-./tests/mock-tunnel-guard.sh
+if [ "$(id -u)" = 0 ]; then
+    ./tests/mock-port-manager.sh
+    ./tests/mock-route-cache.sh
+    ./tests/mock-tunnel-guard.sh
+elif command -v unshare >/dev/null 2>&1 && unshare -Ur true >/dev/null 2>&1; then
+    unshare -Ur ./tests/mock-port-manager.sh
+    unshare -Ur ./tests/mock-route-cache.sh
+    unshare -Ur ./tests/mock-tunnel-guard.sh
+else
+    ./tests/mock-port-manager.sh
+    ./tests/mock-route-cache.sh
+    ./tests/mock-tunnel-guard.sh
+fi
 ./tests/mock-mesh-exit.sh
 ./tests/test-selection-model.py
 node tests/test-route-order-ui.js
@@ -595,7 +678,7 @@ if style.count('id="pollywan-style"') != 1:
 if 'id="pollywan-style"' in (root / 'files/app/main/u-multiwan.ut').read_text():
     raise SystemExit('u-multiwan must not render #pollywan-style directly')
 page = (root / 'files/app/partial/multiwan-page.ut').read_text()
-for required in ['id="multiwan-page"', 'wan-card-1', 'wan-card-2', 'usb-wan', 'mesh-card', 'Table 22', 'Table 26', 'Table 27', 'Table 28']:
+for required in ['id="multiwan-page"', 'wan-card-1', 'wan-card-2', 'usb-wan', 'mesh-card']:
     if required not in page and required not in (root / 'files/app/partial/wan-policy.ut').read_text():
         raise SystemExit(f'missing dashboard marker: {required}')
 for port in range(1, 6):

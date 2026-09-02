@@ -4,6 +4,7 @@
 set -eu
 
 [ "$(id -u)" = 0 ] || { echo 'SKIP: mock route-cache chroot requires root'; exit 0; }
+if ! command -v chroot >/dev/null 2>&1; then chroot() { busybox chroot "$@"; }; fi
 ROOT_SRC="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 ROOT="${TMPDIR:-/tmp}/pollywan-route-cache-test.$$"
 trap 'rm -rf "$ROOT"' EXIT HUP INT TERM
@@ -15,7 +16,7 @@ cp /lib/x86_64-linux-gnu/libresolv.so.2 "$ROOT/lib/x86_64-linux-gnu/"
 cp /lib/x86_64-linux-gnu/libc.so.6 "$ROOT/lib/x86_64-linux-gnu/"
 cp /lib64/ld-linux-x86-64.so.2 "$ROOT/lib64/"
 for cmd in sh ash awk sed grep cat cp mv rm mkdir head sort printf; do ln -s busybox "$ROOT/bin/$cmd"; done
-mknod -m 666 "$ROOT/dev/null" c 1 3
+mknod -m 666 "$ROOT/dev/null" c 1 3 2>/dev/null || { rm -f "$ROOT/dev/null"; : > "$ROOT/dev/null"; chmod 666 "$ROOT/dev/null"; }
 cp "$ROOT_SRC/files/usr/local/bin/wan-route-cache" "$ROOT/usr/local/bin/"
 chmod 755 "$ROOT/usr/local/bin/wan-route-cache"
 
@@ -76,7 +77,7 @@ IP
 chmod 755 "$ROOT/usr/bin/ubus" "$ROOT/usr/bin/jsonfilter" "$ROOT/sbin/ip"
 ln -s /sbin/ip "$ROOT/usr/bin/ip"
 
-chroot "$ROOT" /usr/local/bin/wan-route-cache all
+IP_BIN=/sbin/ip chroot "$ROOT" /usr/local/bin/wan-route-cache all
 
 LOG="$ROOT/tmp/ip.log"
 grep -F -- '-4 route flush table 101' "$LOG" >/dev/null

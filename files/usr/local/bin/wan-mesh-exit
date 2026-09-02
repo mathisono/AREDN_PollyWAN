@@ -9,6 +9,7 @@ export PATH LC_ALL=C
 BABEL_SOCKET="${BABEL_SOCKET:-/var/run/babel.sock}"
 HOSTS_DIR="${HOSTS_DIR:-/var/run/arednlink/hosts}"
 SOCAT_BIN="${SOCAT_BIN:-socat}"
+IP_BIN="${IP_BIN:-ip}"
 
 dump="$({ printf 'dump-installed-routes\nquit\n'; } | "$SOCAT_BIN" -T 5 -t 5 "UNIX-CLIENT:$BABEL_SOCKET" - 2>/dev/null || true)"
 route="$(printf '%s\n' "$dump" | awk '
@@ -31,7 +32,18 @@ route="$(printf '%s\n' "$dump" | awk '
 ')"
 
 if [ -z "$route" ]; then
-    printf '0|||||\n'
+    # The installed table-22 route is the authoritative availability signal.
+    # Some Babel control-socket versions omit table metadata, so retain useful
+    # live state even when the route origin cannot be resolved from the dump.
+    ip_route="$("$IP_BIN" -4 route show table 22 default 2>/dev/null | awk '$1 == "default" { print; exit }')"
+    if [ -z "$ip_route" ]; then
+        printf '0|||||\n'
+        exit 0
+    fi
+    next_hop="$(printf '%s\n' "$ip_route" | awk '{ for (i = 1; i <= NF; i++) if ($i == "via") { print $(i + 1); exit } }')"
+    interface="$(printf '%s\n' "$ip_route" | awk '{ for (i = 1; i <= NF; i++) if ($i == "dev") { print $(i + 1); exit } }')"
+    metric="$(printf '%s\n' "$ip_route" | awk '{ for (i = 1; i <= NF; i++) if ($i == "metric") { print $(i + 1); exit } }')"
+    printf '1|Unknown||%s|%s|%s\n' "$next_hop" "$interface" "$metric"
     exit 0
 fi
 
