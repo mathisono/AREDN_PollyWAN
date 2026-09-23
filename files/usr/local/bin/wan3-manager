@@ -20,8 +20,9 @@ LOCAL_TABLE=26
 LOCAL_SUBNET_TABLE=27
 BABEL_EXPORT_TABLE=28
 REMOTE_MESH_TABLE=22
+LOCAL_DTD_DEFAULT_TABLE=23
 LOCAL_RULE_PREF=145
-LAN_RULE_PREF=45
+LAN_RULE_PREF=44
 EXPORT_CHANGE_FILE=/tmp/wan-sla/last-export-change
 
 mkdir -p "$STATE_DIR" || exit 1
@@ -406,11 +407,13 @@ write_state()
 {
     status="$1"; active="$2"; device="$3"; bin="$4"; shared="$5"; message="$6"
     remote=0
+    dtd=0
     ip -4 route show table "$REMOTE_MESH_TABLE" default | grep -q '^default' && remote=1
+    ip -4 route show table "$LOCAL_DTD_DEFAULT_TABLE" default | grep -q '^default' && dtd=1
     tmp="$STATE_FILE.tmp.$$"
-    printf '{"status":"%s","active":"%s","device":"%s","bin":"%s","mesh_shared":%s,"remote_mesh_default":%s,"message":"%s","time":"%s"}\n' \
+    printf '{"status":"%s","active":"%s","device":"%s","bin":"%s","mesh_shared":%s,"remote_mesh_default":%s,"local_dtd_default":%s,"message":"%s","time":"%s"}\n' \
         "$(json_escape "$status")" "$(json_escape "$active")" "$(json_escape "$device")" "$(json_escape "$bin")" \
-        "$shared" "$remote" "$(json_escape "$message")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" && mv "$tmp" "$STATE_FILE"
+        "$shared" "$remote" "$dtd" "$(json_escape "$message")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$tmp" && mv "$tmp" "$STATE_FILE"
 }
 
 persist_active()
@@ -517,7 +520,10 @@ withdraw_local()
     /usr/local/bin/wan-tunnel-guard apply >/dev/null 2>&1 || true
     if ip -4 route show table "$REMOTE_MESH_TABLE" default | grep -q '^default'; then
         active=mesh
-        message="$reason; local defaults withdrawn and AREDN table 22 is available"
+        message="$reason; local defaults withdrawn and AREDN table 22 remote Mesh WAN is available"
+    elif ip -4 route show table "$LOCAL_DTD_DEFAULT_TABLE" default | grep -q '^default'; then
+        active=mesh
+        message="$reason; local defaults withdrawn and AREDN table 23 local DtD default is available"
     else
         active=none
         message="$reason; no remote Mesh WAN is currently available"

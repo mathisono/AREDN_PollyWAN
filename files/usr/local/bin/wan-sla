@@ -22,8 +22,9 @@ EXPORT_CHANGE_FILE="$STATE_DIR/last-export-change"
 CONFIG_PACKAGE=aredn
 CONFIG_SECTION=multiwan
 REMOTE_MESH_TABLE=22
+LOCAL_DTD_DEFAULT_TABLE=23
 WAN1_TRANSPORT=unknown
-PACKAGE_VERSION=0.1.0-r29
+PACKAGE_VERSION=0.1.0-r30
 MANUAL_CHECK=0
 
 mkdir -p "$STATE_DIR" || exit 1
@@ -505,8 +506,9 @@ switch_to()
 write_status()
 {
     mode="$1"; active="$2"; selected_bin="$3"; message="$4"
-    table22=0; table28=0
+    table22=0; table23=0; table28=0
     ip -4 route show table "$REMOTE_MESH_TABLE" default | grep -q '^default' && table22=1
+    ip -4 route show table "$LOCAL_DTD_DEFAULT_TABLE" default | grep -q '^default' && table23=1
     ip -4 route show table 28 default | grep -q '^default' && table28=1
     mesh_to_wan="$(aredn_wan_get mesh_to_local_wan)"; [ "$mesh_to_wan" = 1 ] || mesh_to_wan=0
     lan_to_mesh="$(aredn_wan_get lan_to_remote_wan)"; [ "$lan_to_mesh" = 1 ] || lan_to_mesh=0
@@ -539,7 +541,7 @@ write_status()
 
     tmp="$STATUS_FILE.tmp.$$"
     {
-        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":26,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
+        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":26,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"local_dtd_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
             "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" \
             "$(json_escape "$mode")" "$(json_escape "$active")" "$(json_escape "$active_health")" "$active_upstream" "$active_gateway" \
             "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
@@ -549,7 +551,7 @@ write_status()
             "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" \
             "$(json_escape "$selected_bin")" "$(json_escape "$WAN1_TRANSPORT")" "$(json_escape "$message")" \
-            "$table28" "$table22" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            "$table28" "$table22" "$table23" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         first=1
         while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
             [ "$first" = 1 ] || printf ','
@@ -727,7 +729,7 @@ evaluate_once()
     elif [ -z "$best" ]; then
         /usr/local/bin/wan3-manager withdraw 'No local WAN meets health and selection criteria' 1 >/dev/null 2>&1 || true
         active="$(uci_get active)"; active_bin=none
-        message='all local WANs withdrawn; table 22 may provide the remote Mesh WAN fallback'
+        message='all local WANs withdrawn; table 22 may provide remote Mesh WAN and table 23 may provide a local DtD default'
         reset_promotion
     elif [ "$active" = mesh ] || [ "$active" = none ] || [ "$active_healthy" != 1 ] || [ "$active_score" -eq 0 ]; then
         if switch_to "$best" >/dev/null 2>&1; then

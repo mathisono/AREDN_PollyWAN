@@ -23,7 +23,7 @@ PollyWAN is experimental and is not an official AREDN release.
 - MikroTik hAP ac2
 - MikroTik hAP ac3
 
-The current package release is `0.1.0-r29`.
+The current package release is `0.1.0-r30`.
 
 ## Release files
 
@@ -41,13 +41,13 @@ Mesh AP/PTP/station radios are not WAN candidates. On AREDN builds with the shar
 Download the APK for the matching PollyWAN release from:
 
 ```text
-https://github.com/mathisono/AREDN_PollyWAN/releases/tag/v0.1.0-r29
+https://github.com/mathisono/AREDN_PollyWAN/releases/tag/v0.1.0-r30
 ```
 
 ### Core PollyWAN APK
 
 ```text
-aredn-multiwan-0.1.0-r29.apk
+aredn-multiwan-0.1.0-r30.apk
 SHA-256: 8c4893d48e0b9af3d4bef0a14d5c0ed28f6ebe98677d29e7a527f8194e705e23
 ```
 
@@ -70,7 +70,7 @@ Verify downloaded release files with `SHA256SUMS-release.txt`.
 
 ### Recommended: AREDN web interface
 
-1. Download `aredn-multiwan-0.1.0-r29.apk` to your computer.
+1. Download `aredn-multiwan-0.1.0-r30.apk` to your computer.
 2. Log in to the AREDN node as an administrator.
 3. Open **Packages**.
 4. Under **Upload Package**, choose the PollyWAN APK.
@@ -82,7 +82,7 @@ Verify downloaded release files with `SHA256SUMS-release.txt`.
 http://NODE/a/multiwan
 ```
 
-Release r29 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
+Release r30 declares `ca-bundle`, `curl`, `jshn`, and `jsonfilter`. `libc` is provided by the base system. It does not declare `ip-tiny`, `redsocks`, `libevent2-core7`, `nftables-json`, or `kmod-nft-nat`.
 
 PollyWAN remains disabled after installation. Installing the APK alone does not reload networking or apply Ethernet port roles.
 
@@ -100,7 +100,7 @@ Do not run `node-setup`, reload networking, or apply port roles merely to finish
 ssh root@NODE
 cd /tmp
 
-VERSION='0.1.0-r29'
+VERSION='0.1.0-r30'
 TAG="v${VERSION}"
 APK="aredn-multiwan-${VERSION}.apk"
 
@@ -357,7 +357,7 @@ Package-owned public telemetry is available at:
 http://NODE/cgi-bin/apps/aredn-multiwan/status.json
 ```
 
-It returns schema version 1 from `/tmp/wan-sla/telemetry.json`, uses JSON `null` for unavailable scalar values, and does not run probes or modify routes. Integration into `/cgi-bin/sysinfo.json` is deferred until AREDN core accepts a reviewed hook; r29 does not replace AREDN core sysinfo files.
+It returns schema version 1 from `/tmp/wan-sla/telemetry.json`, uses JSON `null` for unavailable scalar values, and does not run probes or modify routes. Integration into `/cgi-bin/sysinfo.json` is deferred until AREDN core accepts a reviewed hook; r30 does not replace AREDN core sysinfo files.
 
 Run bounded speed tests from SSH:
 
@@ -413,7 +413,7 @@ Then run:
 ./tests/verify.sh
 make -C openwrt package/aredn-multiwan/clean V=s
 make -C openwrt package/aredn-multiwan/compile V=s
-find openwrt/bin -name 'aredn-multiwan-0.1.0-r29.apk' -print -exec sha256sum {} \;
+find openwrt/bin -name 'aredn-multiwan-0.1.0-r30.apk' -print -exec sha256sum {} \;
 ```
 
 Static verification is not a substitute for exact kernel-ABI checks, disabled-install testing, port rollback testing, or physical hardware validation.

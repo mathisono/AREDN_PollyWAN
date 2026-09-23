@@ -1,5 +1,5 @@
 #!/bin/sh
-# Static and disposable-mock verification for the standalone PollyWAN r29 source.
+# Static and disposable-mock verification for the standalone PollyWAN r30 source.
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
@@ -83,7 +83,7 @@ done
 # Package metadata and optional-only target contract.
 require_text Makefile 'PKG_NAME:=aredn-multiwan'
 require_text Makefile 'PKG_VERSION:=0.1.0'
-require_text Makefile 'PKG_RELEASE:=29'
+require_text Makefile 'PKG_RELEASE:=30'
 require_text Makefile 'URL:=https://github.com/mathisono/AREDN_PollyWAN'
 reject_text Makefile '+ip-tiny'
 reject_text Makefile '+redsocks'
@@ -97,6 +97,7 @@ reject_text Makefile '+kmod-usb-net '
 require_text Makefile '+TARGET_ath79:swconfig'
 require_text Makefile 'WAN 1 as either administrator-selected hAP Ethernet or the'
 require_text Makefile 'existing AREDN Wi-Fi client logical interface'
+require_text Makefile 'table 23 local DtD defaults'
 require_text Makefile 'Installation is disabled and inert'
 require_text Makefile 'Package/aredn-multiwan/prerm'
 require_text Makefile 'files/app/partial/multiwan-style.ut'
@@ -226,6 +227,8 @@ require_text "$WAN3" 'LOCAL_TABLE=26'
 require_text "$WAN3" 'LOCAL_SUBNET_TABLE=27'
 require_text "$WAN3" 'BABEL_EXPORT_TABLE=28'
 require_text "$WAN3" 'REMOTE_MESH_TABLE=22'
+require_text "$WAN3" 'LOCAL_DTD_DEFAULT_TABLE=23'
+require_text "$WAN3" 'LAN_RULE_PREF=44'
 require_text "$WAN3" 'snapshot_routes'
 require_text "$WAN3" 'restore_route_snapshot'
 require_text "$WAN3" 'function cidr_prefix'
@@ -236,7 +239,9 @@ require_text "$WAN3" 'replace_default_if_needed main "$device" "$source" "$gatew
 require_text "$WAN3" 'default_route_matches'
 require_text "$WAN3" 'replace_default_if_needed'
 require_text "$WAN3" 'withdraw_export_if_needed'
-require_text "$WAN3" 'table 22 is available'
+require_text "$WAN3" 'table 22 remote Mesh WAN is available'
+require_text "$WAN3" 'table 23 local DtD default is available'
+require_text "$WAN3" 'local_dtd_default'
 reject_text "$WAN3" 'start_proxy'
 reject_text "$WAN3" 'stop_proxy'
 reject_text "$WAN3" 'proxy-start'
@@ -285,10 +290,11 @@ require_text "$SLA" 'speed_test_interval'
 require_text "$SLA" '/tmp/wan-speed/$name.json'
 require_text "$SLA" 'selection_mode=automatic'
 require_text "$SLA" '[ "$raw_score" -eq 1 ] || [ "$raw_score" -ge "$min_score" ]'
-require_text "$SLA" 'table 22 may provide the remote Mesh WAN fallback'
+require_text "$SLA" 'table 22 may provide remote Mesh WAN and table 23 may provide a local DtD default'
 require_text "$SLA" 'wan1_transport'
 require_text "$SLA" 'TELEMETRY_FILE="$STATE_DIR/telemetry.json"'
-require_text "$SLA" 'PACKAGE_VERSION=0.1.0-r29'
+require_text "$SLA" 'PACKAGE_VERSION=0.1.0-r30'
+require_text "$SLA" 'local_dtd_default'
 require_text "$SLA" '"schema_version":1'
 require_text "$SLA" 'active_upstream_reachable'
 require_text "$SLA" 'mesh_exported'
@@ -472,15 +478,15 @@ require_text docs/multiwan-verification.md 'PR #2817 remote forwarding gate'
 require_text docs/multiwan-verification.md 'firewall zone `wifi` still contains logical networks `mesh`, `fast`, `wifi`, `wifi0`, and `wifi1`'
 require_text docs/multiwan-verification.md 'WAN 3 is a dynamic `wan3` interface with `zone wan`'
 require_text docs/multiwan-verification.md "wan3-manager withdraw 'test' 1"
-require_text docs/aredn-sysinfo-integration-plan.md 'not implemented by the standalone r29 APK'
+require_text docs/aredn-sysinfo-integration-plan.md 'not implemented by the standalone r30 APK'
 require_text docs/aredn-sysinfo-integration-plan.md '/tmp/sysinfo/extensions/'
-require_text tools/openclaw-build-test-prompt.md 'mse-88/hub5'
+require_text tools/openclaw-build-test-prompt.md 'matching nightly lab node'
 require_text tools/openclaw-build-test-prompt.md 'main'
 require_text tools/openclaw-build-test-prompt.md 'Wi-Fi client'
-require_text tools/openclaw-build-test-prompt.md 'r29 requirements'
+require_text tools/openclaw-build-test-prompt.md 'r30 requirements'
 [ "$(wc -c < tools/openclaw-build-test-prompt.md)" -lt 2000 ] || fail 'OpenClaw prompt exceeds 2000 characters'
 require_text SYNC_SOURCE 'standalone_branch=main'
-require_text SYNC_SOURCE 'integration_branch=agent/pollywan-r6'
+require_text SYNC_SOURCE 'integration_branch=agent/pollywan-main-compat'
 require_text SYNC_SOURCE 'sync_contract=standalone-root-equals-integration-subtree'
 require_text tools/sync-integration.sh 'rsync -rnic --delete --exclude .git'
 
@@ -582,7 +588,7 @@ raw = subprocess.check_output(['sh', 'files/www/cgi-bin/apps/aredn-multiwan/stat
 body = raw.split('\r\n\r\n', 1)[1]
 data = json.loads(body)
 assert data['schema_version'] == 1
-assert data['package_version'] == '0.1.0-r29'
+assert data['package_version'] == '0.1.0-r30'
 PY
 
-echo 'PollyWAN r29 static and mock verification passed'
+echo 'PollyWAN r30 static and mock verification passed'

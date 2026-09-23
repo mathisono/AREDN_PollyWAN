@@ -2,7 +2,7 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=aredn-multiwan
 PKG_VERSION:=0.1.0
-PKG_RELEASE:=29
+PKG_RELEASE:=30
 PKG_LICENSE:=GPL-3.0-only
 PKG_MAINTAINER:=AREDN contributors
 PKGARCH:=all
@@ -25,7 +25,8 @@ define Package/aredn-multiwan/description
  existing AREDN Wi-Fi client logical interface, assigns WAN 2 to Ethernet,
  keeps WAN 3 fixed to an Android USB RNDIS/CDC Ethernet tether, regulates the three local links using health and
  bounded speed classes, synchronizes AREDN routing tables 26/27/28, preserves
- table 22 as the remote Mesh WAN fallback, prevents unqualified Babel default
+ table 22 as the remote Mesh WAN fallback, reports table 23 local DtD defaults
+ separately, prevents unqualified Babel default
  advertisement, and hard-blocks tunnel ingress from Internet defaults.
  Installation is disabled and inert until an administrator explicitly enables it.
 endef
