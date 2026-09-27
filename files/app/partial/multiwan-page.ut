@@ -26,7 +26,7 @@ const enabled = uciMesh.get("aredn", "multiwan", "enabled") === "1";
 let mode = uciMesh.get("aredn", "multiwan", "selection_mode") || "manual";
 if (mode === "availability" || mode === "adaptive") mode = "automatic";
 const active = uciMesh.get("aredn", "multiwan", "active") || "wan";
-const release = "r29";
+const release = "r30";
 const status = readPolicyStatus();
 const currentRuntime = runtimeState(enabled, status);
 const runtimeStates = [ "Disabled", "Idle", "Checking", "Healthy", "Degraded", "Holding", "Failing over", "No eligible WAN" ];

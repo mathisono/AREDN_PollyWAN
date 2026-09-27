@@ -95,6 +95,8 @@ def main() -> None:
     ) == "wan2"
     assert CLASS_SCORE["low"] < CLASS_SCORE["medium"] < CLASS_SCORE["fast"]
     assert {"manual": "manual", "availability": "automatic", "adaptive": "automatic"}["adaptive"] == "automatic"
+    assert 22 != 23
+    assert 44 != 45
 
     print("simplified selection policy model passed")
 

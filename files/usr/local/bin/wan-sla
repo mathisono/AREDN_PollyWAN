@@ -22,8 +22,9 @@ EXPORT_CHANGE_FILE="$STATE_DIR/last-export-change"
 CONFIG_PACKAGE=aredn
 CONFIG_SECTION=multiwan
 REMOTE_MESH_TABLE=22
+LOCAL_DTD_DEFAULT_TABLE=23
 WAN1_TRANSPORT=unknown
-PACKAGE_VERSION=0.1.0-r29
+PACKAGE_VERSION=0.1.0-r30
 MANUAL_CHECK=0
 
 mkdir -p "$STATE_DIR" || exit 1
@@ -56,6 +57,7 @@ package_has_effects()
     [ -e /etc/aredn_include/.aredn-multiwan-ports ] && return 0
     ip -4 route show table 26 default 2>/dev/null | grep -q '^default' && return 0
     ubus call network.interface.wan3 status >/dev/null 2>&1 && return 0
+    [ "$(uci_get native_monitor_takeover)" = 1 ] && return 0
     return 1
 }
 
@@ -505,12 +507,15 @@ switch_to()
 write_status()
 {
     mode="$1"; active="$2"; selected_bin="$3"; message="$4"
-    table22=0; table28=0
+    table22=0; table23=0; table28=0
     ip -4 route show table "$REMOTE_MESH_TABLE" default | grep -q '^default' && table22=1
+    ip -4 route show table "$LOCAL_DTD_DEFAULT_TABLE" default | grep -q '^default' && table23=1
     ip -4 route show table 28 default | grep -q '^default' && table28=1
     mesh_to_wan="$(aredn_wan_get mesh_to_local_wan)"; [ "$mesh_to_wan" = 1 ] || mesh_to_wan=0
     lan_to_mesh="$(aredn_wan_get lan_to_remote_wan)"; [ "$lan_to_mesh" = 1 ] || lan_to_mesh=0
     generated="$(date +%s)"
+    mesh_exported=false
+    [ "$table28" = 1 ] && [ "$mesh_to_wan" = 1 ] && mesh_exported=true
 
     active_health=unknown
     active_upstream=false
@@ -539,17 +544,18 @@ write_status()
 
     tmp="$STATUS_FILE.tmp.$$"
     {
-        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":26,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
+        printf '{"schema_version":2,"package_version":"%s","enabled":%s,"integration_supported":%s,"mode":"%s","active":"%s","active_health":"%s","active_upstream_reachable":%s,"active_gateway_reachable":%s,"active_device":%s,"active_source":%s,"active_gateway":%s,"active_private_table":%s,"selected_route_table":26,"selected_default":%s,"mesh_exported":%s,"mesh_export_table":28,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"probe_endpoint":%s,"probe_reason":"%s","selected_bin":"%s","wan1_transport":"%s","message":"%s","table28_published":%s,"remote_mesh_default":%s,"local_dtd_default":%s,"mesh_to_wan":%s,"lan_to_mesh_wan":%s,"tunnel_guard":true,"time":"%s","candidates":[' \
             "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" \
+            true \
             "$(json_escape "$mode")" "$(json_escape "$active")" "$(json_escape "$active_health")" "$active_upstream" "$active_gateway" \
             "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
             "$([ -n "$active_source" ] && [ "$active_source" != ' ' ] && printf '"%s"' "$(json_escape "$active_source")" || printf null)" \
             "$([ -n "$active_gateway_value" ] && [ "$active_gateway_value" != ' ' ] && printf '"%s"' "$(json_escape "$active_gateway_value")" || printf null)" \
-            "$active_private_table" "$selected_default" "$([ "$table28" = 1 ] && echo true || echo false)" \
+            "$active_private_table" "$selected_default" "$mesh_exported" \
             "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" \
             "$(json_escape "$selected_bin")" "$(json_escape "$WAN1_TRANSPORT")" "$(json_escape "$message")" \
-            "$table28" "$table22" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            "$table28" "$table22" "$table23" "$mesh_to_wan" "$lan_to_mesh" "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
         first=1
         while IFS='|' read -r name configured interface_up route_valid gateway_reachable upstream_reachable healthy export_eligible bin score mbps device reason age probe_reason selection_role active_route source gateway endpoint private_table failures; do
             [ "$first" = 1 ] || printf ','
@@ -581,15 +587,16 @@ write_status()
     active_next="$(cat "$STATE_DIR/next-probe.$active" 2>/dev/null || true)"; valid_uint "$active_next" || active_next=null
     ttmp="$TELEMETRY_FILE.tmp.$$"
     {
-        printf '{"schema_version":1,"package_version":"%s","enabled":%s,"mode":"%s","active":%s,"health":"%s","gateway_reachable":%s,"upstream_reachable":%s,"selection_healthy":%s,"export_eligible":%s,"device":%s,"source":%s,"gateway":%s,"private_table":%s,"selected_table":%s,"mesh_exported":%s,"export_table":28,"probe_endpoint":%s,"probe_reason":"%s","next_probe_epoch":%s,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"candidates":[' \
-            "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" "$(json_escape "$mode")" \
+        printf '{"schema_version":1,"package_version":"%s","enabled":%s,"integration_supported":%s,"mode":"%s","active":%s,"health":"%s","gateway_reachable":%s,"upstream_reachable":%s,"selection_healthy":%s,"export_eligible":%s,"device":%s,"source":%s,"gateway":%s,"private_table":%s,"selected_table":%s,"mesh_exported":%s,"export_table":28,"probe_endpoint":%s,"probe_reason":"%s","next_probe_epoch":%s,"last_switch_epoch":%s,"last_export_change_epoch":%s,"generated_at_epoch":%s,"candidates":[' \
+            "$PACKAGE_VERSION" "$([ "$(uci_get enabled)" = 1 ] && echo true || echo false)" \
+            true "$(json_escape "$mode")" \
             "$(case "$active" in wan|wan2|wan3) printf '"%s"' "$active" ;; *) printf null ;; esac)" \
             "$(json_escape "$health")" "$active_gateway" "$active_upstream" "$active_selection_healthy" "$active_export_eligible" \
             "$([ -n "$active_device" ] && printf '"%s"' "$(json_escape "$active_device")" || printf null)" \
             "$([ -n "$active_source" ] && [ "$active_source" != ' ' ] && printf '"%s"' "$(json_escape "$active_source")" || printf null)" \
             "$([ -n "$active_gateway_value" ] && [ "$active_gateway_value" != ' ' ] && printf '"%s"' "$(json_escape "$active_gateway_value")" || printf null)" \
             "$active_private_table" "$([ "$selected_default" = null ] && echo null || echo 26)" \
-            "$([ "$table28" = 1 ] && echo true || echo false)" \
+            "$mesh_exported" \
             "$([ -n "$active_probe_endpoint" ] && [ "$active_probe_endpoint" != ' ' ] && printf '"%s"' "$(json_escape "$active_probe_endpoint")" || printf null)" "$(json_escape "$active_probe_reason")" "$active_next" \
             "$(last_epoch_or_null "$SWITCH_FILE")" "$(last_epoch_or_null "$EXPORT_CHANGE_FILE")" "$generated"
         first=1
@@ -633,12 +640,11 @@ evaluate_once()
     fi
     trap 'rm -rf "$LOCK_DIR"' EXIT HUP INT TERM
 
-    /usr/local/bin/wan-tunnel-guard apply >/dev/null 2>&1 || true
     [ -r "$CANDIDATE_FILE" ] && cp "$CANDIDATE_FILE" "$CANDIDATE_FILE.last" 2>/dev/null || true
     : > "$CANDIDATE_FILE"
 
     mode="$(uci_get selection_mode)"
-    case "$mode" in availability|adaptive) mode=automatic; uci -c /etc/config.mesh -q set "$CONFIG_PACKAGE.$CONFIG_SECTION.selection_mode=automatic"; uci -c /etc/config.mesh -q commit "$CONFIG_PACKAGE" ;; manual|automatic) ;; *) mode=manual ;; esac
+    case "$mode" in ordered|availability|adaptive) mode=automatic; uci -c /etc/config.mesh -q set "$CONFIG_PACKAGE.$CONFIG_SECTION.selection_mode=automatic"; uci -c /etc/config.mesh -q commit "$CONFIG_PACKAGE" ;; manual|automatic) ;; *) mode=manual ;; esac
     if [ "$(uci_get enabled)" != 1 ]; then
         if package_has_effects; then
             /usr/local/bin/wan-port-manager disable >/dev/null 2>&1 || true
@@ -653,6 +659,8 @@ evaluate_once()
         rm -rf "$LOCK_DIR"; trap - EXIT HUP INT TERM
         return 0
     fi
+
+    /usr/local/bin/wan-tunnel-guard apply >/dev/null 2>&1 || true
 
     WAN1_TRANSPORT="$(/usr/local/bin/wan-port-manager wan-transport 2>/dev/null)"
     if [ $? -ne 0 ]; then
@@ -727,7 +735,7 @@ evaluate_once()
     elif [ -z "$best" ]; then
         /usr/local/bin/wan3-manager withdraw 'No local WAN meets health and selection criteria' 1 >/dev/null 2>&1 || true
         active="$(uci_get active)"; active_bin=none
-        message='all local WANs withdrawn; table 22 may provide the remote Mesh WAN fallback'
+        message='all local WANs withdrawn; table 22 may provide remote Mesh WAN and table 23 may provide a local DtD default'
         reset_promotion
     elif [ "$active" = mesh ] || [ "$active" = none ] || [ "$active_healthy" != 1 ] || [ "$active_score" -eq 0 ]; then
         if switch_to "$best" >/dev/null 2>&1; then
